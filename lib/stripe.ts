@@ -334,4 +334,31 @@ export async function getFailedPayments(): Promise<Array<{
   }
 }
 
+export async function getOrCreateStripeCustomer(email: string, userId: string): Promise<string> {
+  const customerSearch = await stripe.customers.search({
+    query: `email:'${email}'`,
+    limit: 1,
+  });
+
+  if (customerSearch.data.length > 0) {
+    return customerSearch.data[0].id;
+  }
+
+  const customer = await stripe.customers.create({
+    email,
+    metadata: { userId },
+  });
+
+  return customer.id;
+}
+
+export async function createBillingPortalSession(customerId: string, returnUrl: string): Promise<string> {
+  const session = await stripe.billingPortal.sessions.create({
+    customer: customerId,
+    return_url: returnUrl,
+  });
+
+  return session.url;
+}
+
 export { stripe };
