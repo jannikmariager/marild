@@ -1,0 +1,30 @@
+{
+  "title": "How signals are generated and published",
+  "inline_microcopy": "About signal visibility:\nOur AI scans the market every hour. To keep alerts readable, only higher-confidence signals are published more widely as Discord posts or notifications. All actionable signals are shown here.",
+  "items": [
+    {
+      "question": "Why do signals start at 10:00 ET?",
+      "answer": "We deliberately hold new signals, Discord alerts, and auto-executions until 10:00 ET. The opening auction (9:30–9:45) is the most chaotic part of the session—liquidity is thinner, quotes are stale, and spoofing bots can whip prices dozens of basis points in seconds. Waiting until 10:00 ET lets spreads tighten, dark-pool prints settle, and primary market depth normalize so the AI is acting on clean data instead of noise. If you trade before 10:00 ET you’re taking risk the platform is explicitly designed to avoid."
+    },
+    {
+      "question": "Why don’t I see every signal as an alert?",
+      "answer": "Our AI scans the market every hour and evaluates all opportunities. To keep alerts useful and readable, only higher-confidence signals are published more widely to Discord or notifications. All actionable signals remain visible inside the app and website."
+    },
+    {
+      "question": "Does the AI still trade signals I don’t see?",
+      "answer": "Yes. The AI model portfolio trades all qualified signals. Visibility does not affect performance or results."
+    },
+    {
+      "question": "What does the confidence score mean?",
+      "answer": "The confidence score reflects how many technical and market conditions align at the time a signal is generated. Signals above 60% confidence are considered actionable."
+    },
+    {
+      "question": "Can a signal appear later even if it didn’t at first?",
+      "answer": "Yes. If market conditions improve, a signal can upgrade itself with higher confidence and be highlighted more widely."
+    },
+    {
+      "question": "Am I missing trading opportunities?",
+      "answer": "No. The AI never stops scanning or trading. This system only controls how signals are shown, not how the AI operates."
+    }
+  ]
+}
