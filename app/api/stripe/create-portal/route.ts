@@ -1,0 +1,60 @@
+import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe';
+
+// Note: Using a stable Stripe API version. The Stripe types may be pinned to an older
+// version, so we cast here to avoid overly strict literal checking.
+import { createServerClient } from '@supabase/ssr';
+
+const rawKey = process.env.STRIPE_SECRET_KEY;
+if (!rawKey) {
+  throw new Error('STRIPE_SECRET_KEY is not set');
+}
+const stripe = new Stripe(rawKey.trim(), {
+  apiVersion: '2024-06-20' as Stripe.LatestApiVersion,
+});
+
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll: () => req.cookies.getAll(),
+          setAll: () => {},
+        },
+      },
+    );
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user || !user.email) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    // In a fuller implementation we would store the Stripe customer ID on the user record.
+    // For now we let Stripe look it up by email.
+    const sessions = await stripe.checkout.sessions.list({
+      limit: 1,
+      customer_details: { email: user.email },
+    });
+
+    const customerId = sessions.data[0]?.customer as string | undefined;
+
+    if (!customerId) {
+      return NextResponse.json({ error: 'No Stripe customer found' }, { status: 400 });
+    }
+
+    const portalSession = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${req.nextUrl.origin}/account`,
+    });
+
+    return NextResponse.json({ url: portalSession.url });
+  } catch (err) {
+    console.error('[stripe/create-portal] error', err);
+    return NextResponse.json({ error: 'Stripe error' }, { status: 500 });
+  }
+}
