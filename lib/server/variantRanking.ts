@@ -9,6 +9,7 @@ export interface VariantAggregateRow {
   avg_avg_rr: number | null
   avg_total_return: number | null
   avg_drawdown: number | null
+  avg_profit_factor: number | null
   avg_sharpe: number | null
   signals_per_ticker: number | null
   trades_per_ticker: number | null
