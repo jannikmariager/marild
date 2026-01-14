@@ -22,7 +22,6 @@ const endpointSecret =
 if (!endpointSecret) {
   throw new Error('STRIPE_WEBHOOK_SECRET is not set');
 }
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 type SubscriptionTier = 'pro' | 'expired';
 
 // Initialize Supabase with service role for admin operations
