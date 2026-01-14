@@ -200,7 +200,7 @@ function PerformanceTabV3() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" />
               <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
+              <Tooltip formatter={(value?: number) => `$${(value ?? 0).toLocaleString()}`} />
               <Line type="monotone" dataKey="Marild AI" stroke="#0AAE84" strokeWidth={2} />
               <Line type="monotone" dataKey={snapshot.benchmark_symbol} stroke="#94A3B8" strokeWidth={2} />
             </LineChart>
