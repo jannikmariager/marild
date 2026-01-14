@@ -19,11 +19,10 @@
 7. Git repo created: `github.com/jannikmariager/marild`, Vercel project: `marild-3otgsjhzm-jannik-mariagers-projects`.
 
 ## Outstanding Issues / Next Tasks
-1. **Vercel build pipeline:** keep iterating on missing imports as they surface; current blocker (after commit `7fdf5b2`) might be next dependency.
-2. **Theme:** dashboard still forced dark locally. After stable deploy, revisit CSS to restore intended light variant (compare with `marild-web-unified` deployment).
-3. **Env variables:** ensure all `NEXT_PUBLIC_*`, `STRIPE_*`, `SUPABASE_*`, etc. are added to Vercel project once build succeeds.
-4. **Admin functionality:** verify each admin sub-route once deploy succeeds (engines, revenue, signals, etc.).
-5. **Documentation:** keep updating this file with each major migration step; add testing instructions once stable.
+1. **Dashboard theme:** still forced dark locally. Now that deploy is green, reapply the light palette (compare with `marild-web-unified`).
+2. **Runtime QA:** click through Vercel deployment (`marild-3otgsjhzm…`) – dashboard, tradesignals, admin routes.
+3. **Admin functionality:** verify engines, revenue, signals, ticker requests, etc. with real data.
+4. **Documentation:** keep updating this handover file; add testing instructions once QA is done.
 
 ## How to Continue
 1. Run `npm run dev` locally; ensure Supabase env vars exist.
@@ -33,4 +32,4 @@
 3. After each fix: `git add …`, commit with summary, push → Vercel redeploys.
 4. Track progress here; note remaining TODOs for the next engineer.
 
-_Last updated: 2026-01-13 @ 21:08 UTC by Warp._
+_Last updated: 2026-01-14 @ 08:35 UTC by Warp (build succeeded on Vercel)._
