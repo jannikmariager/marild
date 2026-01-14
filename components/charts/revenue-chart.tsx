@@ -37,7 +37,7 @@ export function RevenueChart({ data }: RevenueChartProps) {
             border: '1px solid #e5e7eb',
             borderRadius: '8px'
           }}
-          formatter={(value: number) => [`$${value}`, 'Revenue']}
+          formatter={(value?: number) => [`$${value ?? 0}`, 'Revenue']}
         />
         <Area 
           type="monotone" 
