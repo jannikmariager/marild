@@ -396,8 +396,8 @@ function PerformanceTabV4() {
               <YAxis tickFormatter={(value) => `${value.toFixed(0)}`}
               />
               <Tooltip
-                formatter={(value: number, name: string) => [
-                  `${value.toFixed(2)}%`,
+                formatter={(value?: number, name?: string) => [
+                  `${(value ?? 0).toFixed(2)}%`,
                   name === 'portfolio' ? 'Portfolio' : 'SPY',
                 ]}
               />
