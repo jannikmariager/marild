@@ -22,6 +22,7 @@ const endpointSecret =
 if (!endpointSecret) {
   throw new Error('STRIPE_WEBHOOK_SECRET is not set');
 }
+const typedEndpointSecret: string = endpointSecret;
 type SubscriptionTier = 'pro' | 'expired';
 
 // Initialize Supabase with service role for admin operations
@@ -120,7 +121,7 @@ export async function POST(req: NextRequest) {
   let event: Stripe.Event;
 
   try {
-    event = stripe.webhooks.constructEvent(body, signature, endpointSecret);
+    event = stripe.webhooks.constructEvent(body, signature, typedEndpointSecret);
   } catch (err) {
     console.error('Webhook signature verification failed:', err);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
