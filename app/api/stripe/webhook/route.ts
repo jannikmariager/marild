@@ -2,15 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-const rawKey = process.env.STRIPE_SECRET_KEY;
-if (!rawKey) {
+const stripeSecret =
+  process.env.STRIPE_SECRET_KEY ??
+  (process.env.NODE_ENV === 'production'
+    ? undefined
+    : 'sk_test_placeholder');
+if (!stripeSecret) {
   throw new Error('STRIPE_SECRET_KEY is not set');
 }
-const stripe = new Stripe(rawKey.trim(), {
+const stripe = new Stripe(stripeSecret.trim(), {
   // Use a stable Stripe API version; cast to avoid over-strict literal typing
   apiVersion: '2024-06-20' as Stripe.LatestApiVersion,
 });
-
+const endpointSecret =
+  process.env.STRIPE_WEBHOOK_SECRET ??
+  (process.env.NODE_ENV === 'production'
+    ? undefined
+    : 'whsec_placeholder');
+if (!endpointSecret) {
+  throw new Error('STRIPE_WEBHOOK_SECRET is not set');
+}
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 type SubscriptionTier = 'pro' | 'expired';
 

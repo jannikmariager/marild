@@ -5,11 +5,15 @@ import Stripe from 'stripe';
 // version, so we cast here to avoid overly strict literal checking.
 import { createServerClient } from '@supabase/ssr';
 
-const rawKey = process.env.STRIPE_SECRET_KEY;
-if (!rawKey) {
+const stripeSecret =
+  process.env.STRIPE_SECRET_KEY ??
+  (process.env.NODE_ENV === 'production'
+    ? undefined
+    : 'sk_test_placeholder');
+if (!stripeSecret) {
   throw new Error('STRIPE_SECRET_KEY is not set');
 }
-const stripe = new Stripe(rawKey.trim(), {
+const stripe = new Stripe(stripeSecret.trim(), {
   apiVersion: '2024-06-20' as Stripe.LatestApiVersion,
 });
 
