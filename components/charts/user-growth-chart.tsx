@@ -35,7 +35,7 @@ export function UserGrowthChart({ data }: UserGrowthChartProps) {
             border: '1px solid #e5e7eb',
             borderRadius: '8px'
           }}
-          formatter={(value: number) => [value.toLocaleString(), 'Users']}
+          formatter={(value?: number) => [value?.toLocaleString() ?? '0', 'Users']}
         />
         <Area 
           type="monotone" 
