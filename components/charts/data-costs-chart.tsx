@@ -32,7 +32,7 @@ export function DataCostsChart({ data }: DataCostsChartProps) {
             border: '1px solid #e5e7eb',
             borderRadius: '8px'
           }}
-          formatter={(value: number) => [`$${value}`, '']}
+          formatter={(value?: number) => [`$${value ?? 0}`, '']}
         />
         <Legend />
         <Line 
