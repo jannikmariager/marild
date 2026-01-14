@@ -32,7 +32,7 @@ export function TokenUsageChart({ data }: TokenUsageChartProps) {
             border: '1px solid #e5e7eb',
             borderRadius: '8px'
           }}
-          formatter={(value: number) => [value.toLocaleString(), '']}
+          formatter={(value?: number) => [value?.toLocaleString() ?? '0', '']}
         />
         <Legend />
         <Bar dataKey="gpt-4" fill="#3b82f6" />
