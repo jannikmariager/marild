@@ -64,34 +64,41 @@ export function Navbar() {
   }
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between px-6">
+    <nav className="sticky top-0 z-50 w-full border-b border-white/10 bg-[rgba(2,6,23,0.92)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(2,6,23,0.85)]">
+      <div className="container flex h-16 items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center space-x-3">
-          <span className="text-xl font-semibold tracking-tight">Marild</span>
+          <Image
+            src="/marild-logo.svg"
+            alt="Marild"
+            width={132}
+            height={32}
+            priority
+            className="h-8 w-auto"
+          />
         </Link>
 
         <div className="flex items-center gap-6">
           <div className="hidden md:flex items-center gap-6">
-            <Link href="/" className="text-sm font-medium transition-colors hover:text-primary">
+            <Link href="/" className="text-sm font-medium text-zinc-200 transition-colors hover:text-white">
               Home
             </Link>
-            <Link href="/pricing" className="text-sm font-medium transition-colors hover:text-primary">
+            <Link href="/pricing" className="text-sm font-medium text-zinc-200 transition-colors hover:text-white">
               Pricing
             </Link>
-            <Link href="/faq" className="text-sm font-medium transition-colors hover:text-primary">
+            <Link href="/faq" className="text-sm font-medium text-zinc-200 transition-colors hover:text-white">
               FAQ
             </Link>
             <Link
               href="/dashboard"
               onClick={handleDashboardClick}
-              className="text-sm font-medium transition-colors hover:text-primary"
+              className="text-sm font-medium text-zinc-200 transition-colors hover:text-white"
             >
               Dashboard
             </Link>
             {menuReady && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="text-sm font-medium h-auto p-0 hover:bg-transparent">
+                  <Button variant="ghost" className="text-sm font-medium h-auto p-0 hover:bg-transparent text-zinc-200">
                     Legal
                     <ChevronDown className="ml-1 h-4 w-4" />
                   </Button>
