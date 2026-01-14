@@ -628,7 +628,7 @@ export default function LiveTrading({ isPro = false }: LiveTradingProps = {}) {
                           day: 'numeric',
                         });
                       }}
-                      formatter={(value: number) => [`$${Number(value).toLocaleString()}`, 'Equity']}
+                      formatter={(value?: number) => [`$${Number(value ?? 0).toLocaleString()}`, 'Equity']}
                       contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
                     />
                     {/* Tooltip copy alignment for Web/Mobile */}
