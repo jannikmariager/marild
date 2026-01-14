@@ -295,7 +295,7 @@ export function WhatIfCard({ window = 10 }: WhatIfCardProps) {
                     borderRadius: '8px',
                     fontSize: '12px',
                   }}
-                  formatter={(value: number) => [`$${value.toFixed(2)}`, 'Equity']}
+                  formatter={(value?: number) => [`$${(value ?? 0).toFixed(2)}`, 'Equity']}
                 />
                 <Line
                   type="monotone"
