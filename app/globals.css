@@ -171,26 +171,27 @@
 
 .auth-theme {
   color-scheme: dark;
-  --background: rgba(3, 7, 18, 1);
-  --foreground: rgba(248, 250, 252, 0.98);
-  --card: rgba(6, 11, 25, 0.9);
-  --card-foreground: rgba(255, 255, 255, 0.95);
-  --border: rgba(148, 163, 184, 0.18);
-  --muted-foreground: rgba(226, 232, 240, 0.7);
+  --background: #01040e;
+  --foreground: rgba(251, 254, 255, 0.98);
+  --card: rgba(6, 11, 25, 0.92);
+  --card-foreground: rgba(251, 254, 255, 0.95);
+  --border: rgba(51, 65, 85, 0.55);
+  --muted-foreground: rgba(209, 213, 219, 0.72);
 }
 
 .auth-theme .auth-page {
   min-height: calc(100vh - 4rem);
-  background: linear-gradient(180deg, rgba(2, 6, 23, 0.95), rgba(2, 6, 23, 0.85));
+  background: radial-gradient(circle at top, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.98));
   color: var(--foreground);
 }
 
 .auth-theme .auth-page-gradient,
 .auth-theme .auth-glow {
-  background: radial-gradient(circle at 30% -20%, rgba(59, 130, 246, 0.25), transparent 55%),
-    radial-gradient(circle at 80% 130%, rgba(16, 185, 129, 0.2), transparent 45%);
-  filter: blur(40px);
-  opacity: 0.7;
+  background:
+    radial-gradient(circle at 25% -20%, rgba(99, 102, 241, 0.3), transparent 55%),
+    radial-gradient(circle at 80% 120%, rgba(16, 185, 129, 0.35), transparent 50%);
+  filter: blur(50px);
+  opacity: 0.65;
 }
 .marketing-theme {
   color-scheme: dark;

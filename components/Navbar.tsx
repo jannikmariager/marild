@@ -64,7 +64,7 @@ export function Navbar() {
   }
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-white/10 bg-[rgba(2,6,23,0.92)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(2,6,23,0.85)]">
+    <nav className="sticky top-0 z-50 w-full border-b border-white/10 bg-[rgba(1,3,11,0.88)] shadow-[0_10px_40px_rgba(1,3,11,0.8)] backdrop-blur-[18px] supports-[backdrop-filter]:bg-[rgba(1,3,11,0.78)]">
       <div className="container flex h-16 items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center space-x-3">
           <Image
