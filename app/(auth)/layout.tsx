@@ -27,12 +27,18 @@ export default function AuthLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <div className={`auth-theme ${geistSans.variable} ${geistMono.variable} antialiased`}>
       <DashboardTransitionProvider>
-        <Navbar />
-        <main>{children}</main>
-        <Footer />
-        <Analytics />
+        <div className="relative min-h-screen bg-background text-foreground">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.25),_transparent_60%),_radial-gradient(circle_at_bottom,_rgba(16,185,129,0.18),_transparent_65%)] opacity-80" />
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),transparent,rgba(59,130,246,0.12))]" />
+          <div className="relative z-10 flex min-h-screen flex-col">
+            <Navbar />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </div>
+          <Analytics />
+        </div>
       </DashboardTransitionProvider>
     </div>
   );

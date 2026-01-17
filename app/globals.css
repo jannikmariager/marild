@@ -168,6 +168,30 @@
 .marketing-theme .card-button {
   color: inherit;
 }
+
+.auth-theme {
+  color-scheme: dark;
+  --background: rgba(3, 7, 18, 1);
+  --foreground: rgba(248, 250, 252, 0.98);
+  --card: rgba(6, 11, 25, 0.9);
+  --card-foreground: rgba(255, 255, 255, 0.95);
+  --border: rgba(148, 163, 184, 0.18);
+  --muted-foreground: rgba(226, 232, 240, 0.7);
+}
+
+.auth-theme .auth-page {
+  min-height: calc(100vh - 4rem);
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.95), rgba(2, 6, 23, 0.85));
+  color: var(--foreground);
+}
+
+.auth-theme .auth-page-gradient,
+.auth-theme .auth-glow {
+  background: radial-gradient(circle at 30% -20%, rgba(59, 130, 246, 0.25), transparent 55%),
+    radial-gradient(circle at 80% 130%, rgba(16, 185, 129, 0.2), transparent 45%);
+  filter: blur(40px);
+  opacity: 0.7;
+}
 .marketing-theme {
   color-scheme: dark;
   --background: oklch(0.145 0 0);
