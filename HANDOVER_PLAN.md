@@ -18,6 +18,7 @@
 6. Added admin panel pages (`app/admin/...`) from original admin dashboard.
 7. Git repo created: `github.com/jannikmariager/marild`, Vercel project: `marild-3otgsjhzm-jannik-mariagers-projects`.
 8. Marketing layout now renders dark theme (Navbar + footer restored, cards restyled).
+9. Auth pages now share the dark gradient theme (login/signup match production styling).
 
 ## Outstanding Issues / Next Tasks
 1. **Dashboard theme:** still forced dark locally. Now that deploy is green, reapply the light palette (compare with `marild-web-unified`).
