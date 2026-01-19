@@ -14,6 +14,8 @@ const LABEL_OVERRIDES: Record<string, string> = {
   v1: 'Crypto V1', // crypto shadow uses engine_version = 'v1'
 }
 
+const RETIRED_SHADOW_VERSIONS = new Set(['SWING_V1_12_15DEC', 'SWING_FAV8_SHADOW'])
+
 async function fetchJournalTotals(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: closedTrades, error: closedTradesError } = await supabase
     .from('live_trades')
@@ -145,6 +147,9 @@ export async function GET(request: NextRequest) {
     }
 
     for (const version of engineVersions || []) {
+      if (RETIRED_SHADOW_VERSIONS.has((version.engine_version || '').toUpperCase())) {
+        continue
+      }
       const isPrimary = version.run_mode === 'PRIMARY'
       const isCrypto = (version.asset_class ?? '').toLowerCase() === 'crypto' || version.engine_key === 'CRYPTO_V1_SHADOW'
 

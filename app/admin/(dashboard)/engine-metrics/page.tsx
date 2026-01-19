@@ -63,6 +63,20 @@ interface HeartbeatStatus {
 
 type EngineMetricWithKey = EngineMetric & { engine_key?: string | null }
 
+const HIDDEN_SHADOW_VERSIONS = new Set(['SCALP_V1_MICROEDGE', 'SWING_V1_12_15DEC', 'SWING_FAV8_SHADOW'])
+
+const getShadowSlug = (engine: EngineMetricWithKey) => {
+  const engineKey = (engine.engine_key || '').toUpperCase()
+  const version = (engine.engine_version || '').toUpperCase()
+  if (engineKey === 'CRYPTO_V1_SHADOW' || version === 'CRYPTO_V1_SHADOW' || version === 'V1') {
+    return 'crypto-v1-shadow'
+  }
+  if (version === 'QUICK_PROFIT_V1') {
+    return 'quick-profit'
+  }
+  return version.toLowerCase().replace(/_/g, '-')
+}
+
 export default function EngineMetricsPage() {
   const [metrics, setMetrics] = useState<EngineMetric[]>([])
   const [journalTotals, setJournalTotals] = useState<JournalTotals | null>(null)
@@ -119,6 +133,9 @@ export default function EngineMetricsPage() {
 
   const getEngineLabel = (engine: EngineMetric) => engine.display_label || engine.engine_version
   const heartbeatFailures = heartbeat?.results?.filter((r) => !r.ok) ?? []
+  const visibleShadowEngines = shadowEngines.filter(
+    (engine) => !HIDDEN_SHADOW_VERSIONS.has((engine.engine_version || '').toUpperCase()),
+  )
 
   return (
     <div className="space-y-6">
@@ -276,7 +293,7 @@ export default function EngineMetricsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {shadowEngines.length === 0 ? (
+          {visibleShadowEngines.length === 0 ? (
             <p className="text-muted-foreground">No shadow engines found</p>
           ) : (
             <Table>
@@ -295,12 +312,9 @@ export default function EngineMetricsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {shadowEngines.map((engineObj) => {
+                {visibleShadowEngines.map((engineObj) => {
                   const engine = engineObj as EngineMetricWithKey
-                  const engineSlug =
-                    engine.engine_key?.toUpperCase() === 'CRYPTO_V1_SHADOW'
-                      ? 'crypto-v1-shadow'
-                      : engine.engine_version.toLowerCase().replace(/_/g, '-')
+                  const engineSlug = getShadowSlug(engine)
                   return (
                     <TableRow key={`${engine.engine_key ?? 'SWING'}-${engine.engine_version}`}>
                       <TableCell className="font-medium">

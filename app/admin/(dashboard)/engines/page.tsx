@@ -10,9 +10,9 @@ import { EngineSettingsClient } from './EngineSettingsClient';
 import { getStrategyFlags } from './engineFlagsActions';
 
 interface PageProps {
-  searchParams?: {
+  searchParams?: Promise<{
     engineVersion?: string;
-  };
+  }>;
 }
 
 export default async function EnginesDashboardPage({ searchParams }: PageProps) {
@@ -21,8 +21,8 @@ export default async function EnginesDashboardPage({ searchParams }: PageProps) 
     fetchAllVariantResults(),
     getStrategyFlags(),
   ]);
-
-  const engineVersion = searchParams?.engineVersion ?? 'v7.4';
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const engineVersion = resolvedSearchParams.engineVersion ?? 'v7.4';
 
   const aggregate = (aggregateRaw as VariantAggregateRow[]) || [];
   const ranked: RankedVariantRow[] = rankVariants(aggregate);

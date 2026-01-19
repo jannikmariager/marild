@@ -18,6 +18,24 @@ const PUBLIC_ROUTES = [
 
 // Admin routes that require admin role
 const ADMIN_ROUTES = ["/admin"];
+const LEGACY_ADMIN_ROUTES = [
+  "/admin/users",
+  "/admin/subscriptions",
+  "/admin/revenue",
+  "/admin/ai-tokens",
+  "/admin/data-costs",
+  "/admin/engine-allocation",
+  "/admin/smc-engine",
+  "/admin/early-access",
+  "/admin/contact-requests",
+  "/admin/discord",
+  "/admin/crashes",
+  "/admin/errors",
+  "/admin/push",
+  "/admin/content",
+  "/admin/settings",
+  "/admin/performance",
+];
 
 // Check if path starts with any of the given prefixes
 function matchesRoute(pathname: string, routes: string[]): boolean {
@@ -40,6 +58,11 @@ export async function middleware(request: NextRequest) {
   // Allow public routes
   if (matchesRoute(pathname, PUBLIC_ROUTES)) {
     return NextResponse.next();
+  }
+
+  // Block legacy admin routes we don't want to expose
+  if (matchesRoute(pathname, LEGACY_ADMIN_ROUTES)) {
+    return NextResponse.redirect(new URL("/admin", request.url));
   }
 
   // For protected routes, check authentication

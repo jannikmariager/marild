@@ -1,0 +1,104 @@
+import { NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
+
+const ENGINE_KEY = 'QUICK_PROFIT';
+const ENGINE_VERSION = 'QUICK_PROFIT_V1';
+const RUN_MODE = 'SHADOW';
+
+const supabase = supabaseAdmin;
+
+type EngineTradeRow = {
+  id: string;
+  ticker: string | null;
+  side: string | null;
+  entry_price: number | null;
+  exit_price: number | null;
+  realized_pnl: number | null;
+  realized_r: number | null;
+  opened_at: string | null;
+  closed_at: string | null;
+};
+
+export async function GET() {
+  try {
+    const [{ data: portfolio }, { data: trades }, { data: openPositions }] = await Promise.all([
+      supabase
+        .from('engine_portfolios')
+        .select('equity, starting_equity, allocated_notional')
+        .eq('engine_key', ENGINE_KEY)
+        .eq('engine_version', ENGINE_VERSION)
+        .eq('run_mode', RUN_MODE)
+        .maybeSingle(),
+      supabase
+        .from('engine_trades')
+        .select('id, ticker, side, entry_price, exit_price, realized_pnl, realized_r, opened_at, closed_at')
+        .eq('engine_key', ENGINE_KEY)
+        .eq('engine_version', ENGINE_VERSION)
+        .eq('run_mode', RUN_MODE)
+        .order('opened_at', { ascending: false })
+        .limit(500),
+      supabase
+        .from('engine_positions')
+        .select('id')
+        .eq('engine_key', ENGINE_KEY)
+        .eq('engine_version', ENGINE_VERSION)
+        .eq('run_mode', RUN_MODE)
+        .eq('status', 'OPEN'),
+    ]);
+
+    const closedTrades = (trades || []).filter((t) => t.closed_at);
+    const winCount = closedTrades.filter((t) => Number(t.realized_pnl ?? 0) > 0).length;
+    const lossCount = closedTrades.filter((t) => Number(t.realized_pnl ?? 0) < 0).length;
+    const totalPnL = closedTrades.reduce((sum, t) => sum + Number(t.realized_pnl ?? 0), 0);
+    const totalR = closedTrades.reduce((sum, t) => sum + Number(t.realized_r ?? 0), 0);
+
+    const metrics = {
+      total_trades: closedTrades.length,
+      trades_won: winCount,
+      trades_lost: lossCount,
+      win_rate_pct: closedTrades.length > 0 ? parseFloat(((winCount / closedTrades.length) * 100).toFixed(2)) : 0,
+      total_pnl: parseFloat(totalPnL.toFixed(2)),
+      avg_trade_r: closedTrades.length > 0 ? parseFloat((totalR / closedTrades.length).toFixed(4)) : 0,
+      open_positions: (openPositions || []).length,
+      max_positions: numberFromEnv('QUICK_PROFIT_MAX_POSITIONS', 10),
+      current_equity: Number(portfolio?.equity ?? 100000),
+      starting_equity: Number(portfolio?.starting_equity ?? 100000),
+    };
+
+    const formattedTrades = (trades || []).map((t: EngineTradeRow) => ({
+      id: t.id,
+      ticker: t.ticker,
+      entry_price: t.entry_price ? Number(t.entry_price) : null,
+      exit_price: t.exit_price ? Number(t.exit_price) : null,
+      entry_time: t.opened_at,
+      exit_time: t.closed_at,
+      side: t.side,
+      pnl_dollars:
+        t.realized_pnl !== null && t.realized_pnl !== undefined ? Number(t.realized_pnl.toFixed(2)) : null,
+      pnl_r: t.realized_r !== null && t.realized_r !== undefined ? Number(t.realized_r.toFixed(2)) : null,
+      status: t.closed_at ? 'CLOSED' : 'OPEN',
+    }));
+
+    return NextResponse.json(
+      {
+        status: 'ok',
+        metrics,
+        trades: formattedTrades,
+      },
+      { status: 200 },
+    );
+  } catch (error) {
+    console.error('[quick-profit-metrics] Error:', error);
+    return NextResponse.json(
+      { status: 'error', error: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 },
+    );
+  }
+}
+
+function numberFromEnv(key: string, fallback: number) {
+  const raw = process.env[key];
+  if (raw === undefined || raw === null) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}

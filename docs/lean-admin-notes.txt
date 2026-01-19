@@ -1,0 +1,27 @@
+Lean Admin Migration Notes
+==========================
+
+Goal: keep only the control surfaces required for the new architecture (ticker whitelist, signals oversight, engine/portfolio metrics). Everything else remains in the repo temporarily but is hidden from navigation and blocked by middleware.
+
+Hidden / legacy routes (redirected to `/admin`):
+- `/admin/users`
+- `/admin/subscriptions`
+- `/admin/revenue`
+- `/admin/ai-tokens`
+- `/admin/data-costs`
+- `/admin/engine-allocation`
+- `/admin/smc-engine`
+- `/admin/early-access`
+- `/admin/contact-requests`
+- `/admin/discord`
+- `/admin/crashes`
+- `/admin/errors`
+- `/admin/push`
+- `/admin/content`
+- `/admin/settings`
+- `/admin/performance`
+
+Follow-up cleanup:
+1. Once we confirm no other jobs depend on `engine_universe`, `engine_allocation_symbol_allowlist`, or `ticker_engine_owner` overrides, delete the related UI directories and Supabase tables.
+2. After marketing/lead tooling is rebuilt elsewhere, remove the `early-access` and `contact-requests` code paths entirely.
+3. Replace ALLOWED_EMAILS guards with role-based checks so we no longer need hard-coded email lists in the API routes.
