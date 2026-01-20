@@ -46,7 +46,7 @@ type SourceData = {
 };
 
 function hasSourceData(data: SourceData) {
-  return Boolean(data.portfolio) || data.openPositions.length > 0 || data.decisionRows.length > 0;
+  return data.openPositions.length > 0 || data.decisionRows.length > 0;
 }
 
 async function fetchSourceData(source: { engine_key: string; engine_version: string }): Promise<SourceData> {

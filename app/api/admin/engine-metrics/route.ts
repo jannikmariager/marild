@@ -17,6 +17,100 @@ const LABEL_OVERRIDES: Record<string, string> = {
 
 const RETIRED_SHADOW_VERSIONS = new Set(['SWING_V1_12_15DEC', 'SWING_FAV8_SHADOW'])
 
+type EngineSource = { engine_key: string; engine_version: string }
+
+const ENGINE_SOURCE_MAP: Record<string, EngineSource[]> = {
+  QUICK_PROFIT_V1: [
+    { engine_key: 'QUICK_PROFIT', engine_version: 'QUICK_PROFIT_V1' },
+    { engine_key: 'SCALP', engine_version: 'SCALP_V1_MICROEDGE' },
+  ],
+}
+
+function getEngineSources(versionKey: string, engineKey: string, engineVersion: string): EngineSource[] {
+  const key = (versionKey || '').toUpperCase()
+  return ENGINE_SOURCE_MAP[key] ?? [{ engine_key: engineKey, engine_version: engineVersion }]
+}
+
+type StockShadowData = {
+  engine_key: string
+  engine_version: string
+  tradeData: any[]
+  portfolioData: any[]
+  unrealizedPnl: number
+  openCount: number
+}
+
+async function fetchStockShadowData(
+  supabase: ReturnType<typeof createServiceClient>,
+  params: { engine_key: string; engine_version: string; run_mode: string },
+): Promise<StockShadowData> {
+  const { engine_key, engine_version, run_mode } = params
+
+  const { data: trades, error: tradesError } = await supabase
+    .from('engine_trades')
+    .select('ticker, side, entry_price, exit_price, realized_pnl, realized_r, closed_at, opened_at')
+    .eq('engine_key', engine_key)
+    .eq('engine_version', engine_version)
+    .eq('run_mode', run_mode)
+    .order('closed_at', { ascending: false })
+
+  if (tradesError) throw tradesError
+
+  const tradeData = (trades || []).map((t: any) => ({
+    ticker: t.ticker,
+    side: t.side,
+    entry_price: t.entry_price,
+    exit_price: t.exit_price,
+    realized_pnl_dollars: t.realized_pnl,
+    realized_pnl_r: t.realized_r,
+    exit_timestamp: t.closed_at,
+    entry_timestamp: t.opened_at,
+  }))
+
+  const { data: portfolio, error: portfolioError } = await supabase
+    .from('engine_portfolios')
+    .select('equity, updated_at')
+    .eq('engine_key', engine_key)
+    .eq('engine_version', engine_version)
+    .eq('run_mode', run_mode)
+
+  if (portfolioError) throw portfolioError
+
+  const portfolioData = portfolio?.[0]
+    ? [
+        {
+          equity_dollars: portfolio[0].equity,
+          timestamp: portfolio[0].updated_at,
+        },
+      ]
+    : []
+
+  const { data: openShadowPositions, error: openShadowError } = await supabase
+    .from('engine_positions')
+    .select('unrealized_pnl')
+    .eq('engine_key', engine_key)
+    .eq('engine_version', engine_version)
+    .eq('run_mode', run_mode)
+    .eq('status', 'OPEN')
+
+  if (openShadowError) throw openShadowError
+
+  const unrealizedPnl = (openShadowPositions || []).reduce(
+    (sum: number, pos: any) => sum + Number(pos.unrealized_pnl ?? 0),
+    0,
+  )
+  const openCount = openShadowPositions?.length ?? 0
+
+  return {
+    engine_key,
+    engine_version,
+    tradeData,
+    portfolioData,
+    unrealizedPnl,
+    openCount,
+  }
+}
+
 async function fetchJournalTotals(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: closedTrades, error: closedTradesError } = await supabase
     .from('live_trades')
@@ -153,12 +247,11 @@ export async function GET(request: NextRequest) {
         // Legacy SCALP entry is superseded by the Quick profit alias
         continue
       }
-      const sourceEngineKey = version.engine_key
-      const sourceEngineVersion = version.engine_version
-      if (RETIRED_SHADOW_VERSIONS.has((version.engine_version || '').toUpperCase())) {
+      if (RETIRED_SHADOW_VERSIONS.has(versionKey)) {
         continue
       }
-      const isPrimary = version.run_mode === 'PRIMARY'
+      let sourceEngineKey = version.engine_key
+      let sourceEngineVersion = version.engine_version
       const isCrypto = (version.asset_class ?? '').toLowerCase() === 'crypto' || version.engine_key === 'CRYPTO_V1_SHADOW'
 
       let tradeData: any[] = []
@@ -270,66 +363,40 @@ export async function GET(request: NextRequest) {
             )
           }
         } else {
-          const { data: trades, error: tradesError } = await supabase
-            .from('engine_trades')
-            .select('ticker, side, entry_price, exit_price, realized_pnl, realized_r, closed_at, opened_at')
-            .eq('engine_key', sourceEngineKey)
-            .eq('engine_version', sourceEngineVersion)
-            .eq('run_mode', version.run_mode)
-            .order('closed_at', { ascending: false })
+          const candidateSources = getEngineSources(versionKey, version.engine_key, version.engine_version)
+          let stockResult: StockShadowData | null = null
 
-          if (tradesError) {
-            console.error(`Error fetching engine_trades for ${version.engine_version}:`, tradesError)
+          for (const candidate of candidateSources) {
+            try {
+              const result = await fetchStockShadowData(supabase, {
+                engine_key: candidate.engine_key,
+                engine_version: candidate.engine_version,
+                run_mode: version.run_mode,
+              })
+              stockResult = result
+              const hasData =
+                result.tradeData.length > 0 || result.openCount > 0 || Math.abs(result.unrealizedPnl) > 1e-6
+              if (hasData) {
+                break
+              }
+            } catch (err) {
+              console.error(
+                `Error fetching shadow data for ${candidate.engine_key}/${candidate.engine_version}:`,
+                err,
+              )
+              continue
+            }
+          }
+
+          if (!stockResult) {
             continue
           }
 
-          tradeData = (trades || []).map((t: any) => ({
-            ticker: t.ticker,
-            side: t.side,
-            entry_price: t.entry_price,
-            exit_price: t.exit_price,
-            realized_pnl_dollars: t.realized_pnl,
-            realized_pnl_r: t.realized_r,
-            exit_timestamp: t.closed_at,
-            entry_timestamp: t.opened_at,
-          }))
-
-          const { data: portfolio, error: portfolioError } = await supabase
-            .from('engine_portfolios')
-            .select('equity, updated_at')
-            .eq('engine_key', sourceEngineKey)
-            .eq('engine_version', sourceEngineVersion)
-            .eq('run_mode', version.run_mode)
-
-          if (portfolioError) {
-            console.error(`Error fetching engine_portfolios for ${version.engine_version}:`, portfolioError)
-            continue
-          }
-
-          // For shadow, we only have current snapshot, not historical
-          portfolioData = portfolio?.[0]
-            ? [
-                {
-                  equity_dollars: portfolio[0].equity,
-                  timestamp: portfolio[0].updated_at,
-                },
-              ]
-            : []
-
-          const { data: openShadowPositions, error: openShadowError } = await supabase
-            .from('engine_positions')
-            .select('unrealized_pnl')
-            .eq('engine_key', sourceEngineKey)
-            .eq('engine_version', sourceEngineVersion)
-            .eq('run_mode', version.run_mode)
-            .eq('status', 'OPEN')
-
-          if (!openShadowError && openShadowPositions) {
-            unrealizedPnl = openShadowPositions.reduce(
-              (sum: number, pos: any) => sum + Number(pos.unrealized_pnl ?? 0),
-              0,
-            )
-          }
+          sourceEngineKey = stockResult.engine_key
+          sourceEngineVersion = stockResult.engine_version
+          tradeData = stockResult.tradeData
+          portfolioData = stockResult.portfolioData
+          unrealizedPnl = stockResult.unrealizedPnl
         }
       }
 

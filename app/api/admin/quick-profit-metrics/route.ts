@@ -27,7 +27,7 @@ type EngineTradeRow = {
 
 function hasShadowData(result: Awaited<ReturnType<typeof fetchSourceData>>) {
   if (!result) return false;
-  return Boolean(result.portfolio) || result.trades.length > 0 || result.openPositions.length > 0;
+  return result.trades.length > 0 || result.openPositions.length > 0;
 }
 
 async function fetchSourceData(source: { engine_key: string; engine_version: string }) {
