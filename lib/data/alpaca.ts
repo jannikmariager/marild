@@ -27,6 +27,7 @@ function alpacaHeaders() {
 
 export async function fetchLatestMinuteBars(symbols: string[]): Promise<Record<string, MinuteBar>> {
   const DATA_URL = process.env.ALPACA_DATA_URL || 'https://data.alpaca.markets/v2'
+  const FEED = process.env.ALPACA_DATA_FEED || 'iex'
   const chunks: string[][] = []
   for (let i = 0; i < symbols.length; i += MAX_BATCH) {
     chunks.push(symbols.slice(i, i + MAX_BATCH))
@@ -35,7 +36,8 @@ export async function fetchLatestMinuteBars(symbols: string[]): Promise<Record<s
 
   for (const chunk of chunks) {
     if (chunk.length === 0) continue
-    const params = new URLSearchParams({ symbols: chunk.join(','), timeframe: '1Min' })
+    const params = new URLSearchParams({ symbols: chunk.join(',') })
+    if (FEED) params.set('feed', FEED)
     const url = `${DATA_URL}/stocks/bars/latest?${params.toString()}`
     const res = await fetch(url, { headers: alpacaHeaders() })
     if (!res.ok) {
