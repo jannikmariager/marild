@@ -11,12 +11,11 @@ export interface AlpacaLatestBarsResponse {
   bars: Record<string, MinuteBar>
 }
 
-const DATA_URL = process.env.ALPACA_DATA_URL || 'https://data.alpaca.markets/v2'
-const API_KEY = process.env.ALPACA_API_KEY_ID
-const API_SECRET = process.env.ALPACA_API_SECRET_KEY
 const MAX_BATCH = 200
 
 function alpacaHeaders() {
+  const API_KEY = process.env.ALPACA_API_KEY_ID
+  const API_SECRET = process.env.ALPACA_API_SECRET_KEY
   if (!API_KEY || !API_SECRET) {
     throw new Error('Alpaca credentials missing (ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY)')
   }
@@ -27,6 +26,7 @@ function alpacaHeaders() {
 }
 
 export async function fetchLatestMinuteBars(symbols: string[]): Promise<Record<string, MinuteBar>> {
+  const DATA_URL = process.env.ALPACA_DATA_URL || 'https://data.alpaca.markets/v2'
   const chunks: string[][] = []
   for (let i = 0; i < symbols.length; i += MAX_BATCH) {
     chunks.push(symbols.slice(i, i + MAX_BATCH))
