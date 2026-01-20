@@ -103,27 +103,17 @@ export async function GET(request: Request) {
       console.error('[performance/journal] Error fetching open positions:', openPosError);
       return NextResponse.json({ error: 'Failed to load journal totals' }, { status: 500 });
     }
-    const filteredClosedTrades = shouldFilterByEngine
-      ? ((allClosedTrades as any[]) || []).filter((t) => engineVersionSet.has(t.engine_version))
-      : ((allClosedTrades as any[]) || []);
-
-
-    const filteredRealizedPnl = filteredClosedTrades.reduce(
+    const realizedPnl = ((allClosedTrades as any[]) || []).reduce(
       (sum, t) => sum + Number(t.realized_pnl_dollars ?? 0),
       0,
     );
 
-    const filteredOpenPositions = shouldFilterByEngine
-      ? ((openPositions as any[]) || []).filter((p) => engineVersionSet.has(p.engine_version))
-      : ((openPositions as any[]) || []);
-
-
-    const filteredUnrealizedPnl = filteredOpenPositions.reduce(
+    const unrealizedPnl = ((openPositions as any[]) || []).reduce(
       (sum, p) => sum + Number(p.unrealized_pnl_dollars ?? 0),
       0,
     );
 
-    const sinceInceptionTotalPnl = filteredRealizedPnl + filteredUnrealizedPnl;
+    const sinceInceptionTotalPnl = realizedPnl + unrealizedPnl;
     const startingEquity = 100000;
     const currentEquity = startingEquity + sinceInceptionTotalPnl;
 
@@ -198,9 +188,9 @@ export async function GET(request: Request) {
       totals: {
         starting_equity: startingEquity,
         current_equity: currentEquity,
-        since_inception_realized_pnl: filteredRealizedPnl,
-        current_unrealized_pnl: filteredUnrealizedPnl,
-        since_inception_total_pnl: filteredRealizedPnl + filteredUnrealizedPnl,
+        since_inception_realized_pnl: realizedPnl,
+        current_unrealized_pnl: unrealizedPnl,
+        since_inception_total_pnl: sinceInceptionTotalPnl,
       },
       meta: {
         lookback_days: days,

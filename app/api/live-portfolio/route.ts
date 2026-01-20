@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     // Get ALL closed trades to build cumulative equity curve
     const { data: allClosedTrades, error: equityError } = await supabase
       .from('live_trades')
-      .select('exit_timestamp, realized_pnl_dollars')
+      .select('entry_price, exit_price, realized_pnl_dollars, notional_at_entry, size_shares, exit_timestamp')
       .eq('strategy', strategy)
       .not('exit_timestamp', 'is', null)
       .order('exit_timestamp', { ascending: true});
@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
       startingBalance: INITIAL_EQUITY,
     });
 
-    const closedTrades: ClosedTrade[] = (allTrades || []).map((t) => ({
+    const closedTrades: ClosedTrade[] = (allClosedTrades || []).map((t) => ({
       entry_price: t.entry_price,
       exit_price: t.exit_price,
       realized_pnl_dollars: t.realized_pnl_dollars,
