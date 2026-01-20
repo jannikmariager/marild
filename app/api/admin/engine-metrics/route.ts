@@ -85,18 +85,26 @@ async function fetchStockShadowData(
   let overrideStartingEquity: number | null = null
   let overrideCurrentEquity: number | null = null
 
-  const portfolioData = portfolio
+  type PortfolioRow = {
+    equity: number | null
+    starting_equity: number | null
+    updated_at: string
+  }
+
+  const portfolioRow = portfolio as PortfolioRow | null
+
+  const portfolioData = portfolioRow
     ? [
         {
-          equity_dollars: Number(portfolio.equity ?? 0),
-          timestamp: portfolio.updated_at,
+          equity_dollars: Number(portfolioRow.equity ?? 0),
+          timestamp: portfolioRow.updated_at,
         },
       ]
     : []
 
-  if (portfolio) {
-    overrideStartingEquity = Number(portfolio.starting_equity ?? 100000)
-    overrideCurrentEquity = Number(portfolio.equity ?? overrideStartingEquity)
+  if (portfolioRow) {
+    overrideStartingEquity = Number(portfolioRow.starting_equity ?? 100000)
+    overrideCurrentEquity = Number(portfolioRow.equity ?? overrideStartingEquity)
   }
 
   const { data: openPositions, error: openError } = await supabase
