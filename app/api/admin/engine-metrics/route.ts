@@ -17,6 +17,10 @@ const LABEL_OVERRIDES: Record<string, string> = {
 
 const RETIRED_SHADOW_VERSIONS = new Set(['SWING_V1_12_15DEC', 'SWING_FAV8_SHADOW'])
 
+const ENGINE_SOURCE_ALIASES: Record<string, { engine_key: string; engine_version: string }> = {
+  QUICK_PROFIT_V1: { engine_key: 'SCALP', engine_version: 'SCALP_V1_MICROEDGE' },
+}
+
 type EngineSource = { engine_key: string; engine_version: string }
 
 const ENGINE_SOURCE_MAP: Record<string, EngineSource[]> = {
@@ -36,8 +40,9 @@ type StockShadowData = {
   engine_version: string
   tradeData: any[]
   portfolioData: any[]
-  unrealizedPnl: number
   openCount: number
+  overrideStartingEquity: number | null
+  overrideCurrentEquity: number | null
 }
 
 async function fetchStockShadowData(
@@ -69,45 +74,49 @@ async function fetchStockShadowData(
 
   const { data: portfolio, error: portfolioError } = await supabase
     .from('engine_portfolios')
-    .select('equity, updated_at')
+    .select('equity, starting_equity, updated_at')
     .eq('engine_key', engine_key)
     .eq('engine_version', engine_version)
     .eq('run_mode', run_mode)
+    .maybeSingle()
 
   if (portfolioError) throw portfolioError
 
-  const portfolioData = portfolio?.[0]
+  let overrideStartingEquity: number | null = null
+  let overrideCurrentEquity: number | null = null
+
+  const portfolioData = portfolio
     ? [
         {
-          equity_dollars: portfolio[0].equity,
-          timestamp: portfolio[0].updated_at,
+          equity_dollars: Number(portfolio.equity ?? 0),
+          timestamp: portfolio.updated_at,
         },
       ]
     : []
 
-  const { data: openShadowPositions, error: openShadowError } = await supabase
+  if (portfolio) {
+    overrideStartingEquity = Number(portfolio.starting_equity ?? 100000)
+    overrideCurrentEquity = Number(portfolio.equity ?? overrideStartingEquity)
+  }
+
+  const { data: openPositions, error: openError } = await supabase
     .from('engine_positions')
-    .select('unrealized_pnl')
+    .select('id')
     .eq('engine_key', engine_key)
     .eq('engine_version', engine_version)
     .eq('run_mode', run_mode)
     .eq('status', 'OPEN')
 
-  if (openShadowError) throw openShadowError
-
-  const unrealizedPnl = (openShadowPositions || []).reduce(
-    (sum: number, pos: any) => sum + Number(pos.unrealized_pnl ?? 0),
-    0,
-  )
-  const openCount = openShadowPositions?.length ?? 0
+  if (openError) throw openError
 
   return {
     engine_key,
     engine_version,
     tradeData,
     portfolioData,
-    unrealizedPnl,
-    openCount,
+    openCount: openPositions?.length ?? 0,
+    overrideStartingEquity,
+    overrideCurrentEquity,
   }
 }
 
@@ -250,14 +259,18 @@ export async function GET(request: NextRequest) {
       if (RETIRED_SHADOW_VERSIONS.has(versionKey)) {
         continue
       }
-      let sourceEngineKey = version.engine_key
-      let sourceEngineVersion = version.engine_version
+      const alias = ENGINE_SOURCE_ALIASES[versionKey]
+      let sourceEngineKey = alias?.engine_key ?? version.engine_key
+      let sourceEngineVersion = alias?.engine_version ?? version.engine_version
+      const isPrimary = version.run_mode === 'PRIMARY'
       const isCrypto = (version.asset_class ?? '').toLowerCase() === 'crypto' || version.engine_key === 'CRYPTO_V1_SHADOW'
 
       let tradeData: any[] = []
       let portfolioData: any[] = []
 
       let unrealizedPnl = 0
+      let overrideStartingEquity: number | null = null
+      let overrideCurrentEquity: number | null = null
 
       if (isPrimary) {
         // PRIMARY: LIVE SWING engine only — same source of truth as webapp summary
@@ -375,7 +388,11 @@ export async function GET(request: NextRequest) {
               })
               stockResult = result
               const hasData =
-                result.tradeData.length > 0 || result.openCount > 0 || Math.abs(result.unrealizedPnl) > 1e-6
+                result.tradeData.length > 0 ||
+                result.openCount > 0 ||
+                (result.overrideStartingEquity != null &&
+                  result.overrideCurrentEquity != null &&
+                  Math.abs(result.overrideCurrentEquity - result.overrideStartingEquity) > 1e-6)
               if (hasData) {
                 break
               }
@@ -396,7 +413,8 @@ export async function GET(request: NextRequest) {
           sourceEngineVersion = stockResult.engine_version
           tradeData = stockResult.tradeData
           portfolioData = stockResult.portfolioData
-          unrealizedPnl = stockResult.unrealizedPnl
+          overrideStartingEquity = stockResult.overrideStartingEquity
+          overrideCurrentEquity = stockResult.overrideCurrentEquity
         }
       }
 
@@ -424,6 +442,9 @@ export async function GET(request: NextRequest) {
       }
 
       const totalRealized = tradeData.reduce((sum: number, t: any) => sum + (t.realized_pnl_dollars || 0), 0)
+      if (!isPrimary && overrideStartingEquity != null && overrideCurrentEquity != null) {
+        unrealizedPnl = overrideCurrentEquity - overrideStartingEquity - totalRealized
+      }
       const todaysRealized = tradeData.reduce(
         (sum: number, t: any) => (isToday(t.exit_timestamp, requestDate) ? sum + (t.realized_pnl_dollars || 0) : sum),
         0,

@@ -49,7 +49,7 @@ async function fetchSourceData(source: { engine_key: string; engine_version: str
       .limit(500),
     supabase
       .from('engine_positions')
-      .select('id, unrealized_pnl')
+      .select('id')
       .eq('engine_key', source.engine_key)
       .eq('engine_version', source.engine_version)
       .eq('run_mode', RUN_MODE)
@@ -89,24 +89,28 @@ export async function GET() {
     const totalPnL = closedTrades.reduce((sum, t) => sum + Number(t.realized_pnl ?? 0), 0);
     const totalR = closedTrades.reduce((sum, t) => sum + Number(t.realized_r ?? 0), 0);
 
-    const unrealizedPnL = (openPositions || []).reduce(
-      (sum, pos) => sum + Number(pos.unrealized_pnl ?? 0),
-      0,
-    );
+    const startingEquity = Number(portfolio?.starting_equity ?? 100000);
+    const currentEquity = Number(portfolio?.equity ?? startingEquity);
+
+    const realizedPnL = parseFloat(totalPnL.toFixed(2));
+    const impliedUnrealized = currentEquity - startingEquity - realizedPnL;
+    const unrealizedPnL = parseFloat(impliedUnrealized.toFixed(2));
+    const totalPnl = parseFloat((realizedPnL + unrealizedPnL).toFixed(2));
+    const openCount = openPositions.length;
 
     const metrics = {
       total_trades: closedTrades.length,
       trades_won: winCount,
       trades_lost: lossCount,
       win_rate_pct: closedTrades.length > 0 ? parseFloat(((winCount / closedTrades.length) * 100).toFixed(2)) : 0,
-      realized_pnl: parseFloat(totalPnL.toFixed(2)),
-      unrealized_pnl: parseFloat(unrealizedPnL.toFixed(2)),
-      total_pnl: parseFloat((totalPnL + unrealizedPnL).toFixed(2)),
+      realized_pnl: realizedPnL,
+      unrealized_pnl: unrealizedPnL,
+      total_pnl: totalPnl,
       avg_trade_r: closedTrades.length > 0 ? parseFloat((totalR / closedTrades.length).toFixed(4)) : 0,
-      open_positions: (openPositions || []).length,
+      open_positions: openCount,
       max_positions: numberFromEnv('QUICK_PROFIT_MAX_POSITIONS', 10),
-      current_equity: Number(portfolio?.equity ?? 100000),
-      starting_equity: Number(portfolio?.starting_equity ?? 100000),
+      current_equity: currentEquity,
+      starting_equity: startingEquity,
     };
 
     const formattedTrades = (trades || []).map((t: EngineTradeRow) => ({
