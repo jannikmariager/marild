@@ -1,5 +1,5 @@
 {
-  "cron": [
+  "crons": [
     {
       "path": "/api/jobs/bars-ingest",
       "schedule": "*/1 14-20 * * 1-5"
