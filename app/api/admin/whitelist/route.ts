@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 const ALLOWED_EMAILS = ['jannikmariager@gmail.com'];
 const MAX_NOTES_LENGTH = 2000;
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing action' }, { status: 400 });
   }
 
-  const supabase = await createAdminClient();
+  const supabase = supabaseAdmin;
 
   try {
     switch (action) {
@@ -111,7 +112,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function handleUpsert(body: any, supabase: any) {
+type WhitelistActionPayload = Record<string, unknown>;
+type AdminSupabase = SupabaseClient;
+
+async function handleUpsert(body: WhitelistActionPayload, supabase: AdminSupabase) {
   const symbol = normalizeSymbol(body?.symbol);
   if (!symbol) return NextResponse.json({ error: 'Symbol is required' }, { status: 400 });
 
@@ -131,7 +135,7 @@ async function handleUpsert(body: any, supabase: any) {
   return NextResponse.json({ ok: true });
 }
 
-async function handleBulkUpsert(body: any, supabase: any) {
+async function handleBulkUpsert(body: WhitelistActionPayload, supabase: AdminSupabase) {
   const raw = typeof body?.text === 'string' ? body.text : '';
   const symbols = new Set<string>();
   for (const chunk of raw.split(/[\n,]/)) {
@@ -169,7 +173,11 @@ async function handleBulkUpsert(body: any, supabase: any) {
   return NextResponse.json({ ok: true, inserted: rows.length });
 }
 
-async function handlePatch(body: any, supabase: any, patch: Record<string, any>) {
+async function handlePatch(
+  body: WhitelistActionPayload,
+  supabase: AdminSupabase,
+  patch: Record<string, unknown>,
+) {
   const symbol = normalizeSymbol(body?.symbol);
   if (!symbol) return NextResponse.json({ error: 'Symbol is required' }, { status: 400 });
   const { error } = await supabase.from('ticker_whitelist').update(patch).eq('symbol', symbol);
@@ -180,7 +188,7 @@ async function handlePatch(body: any, supabase: any, patch: Record<string, any>)
   return NextResponse.json({ ok: true });
 }
 
-async function handleDelete(body: any, supabase: any) {
+async function handleDelete(body: WhitelistActionPayload, supabase: AdminSupabase) {
   const symbol = normalizeSymbol(body?.symbol);
   if (!symbol) return NextResponse.json({ error: 'Symbol is required' }, { status: 400 });
   const { error } = await supabase.from('ticker_whitelist').delete().eq('symbol', symbol);
@@ -191,7 +199,7 @@ async function handleDelete(body: any, supabase: any) {
   return NextResponse.json({ ok: true });
 }
 
-async function fetchStats(supabase: any) {
+async function fetchStats(supabase: AdminSupabase) {
   const [totalRes, enabledRes, top8Res] = await Promise.all([
     supabase.from('ticker_whitelist').select('symbol', { count: 'exact', head: true }),
     supabase.from('ticker_whitelist').select('symbol', { count: 'exact', head: true }).eq('is_enabled', true),
