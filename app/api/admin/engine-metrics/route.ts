@@ -11,10 +11,15 @@ const LABEL_OVERRIDES: Record<string, string> = {
   SWING_V2_ROBUST: 'SWING_V2_ROBUST',
   SWING_V1_12_15DEC: 'SWING_V1_12_15DEC',
   SCALP_V1_MICROEDGE: 'SCALP_V1_MICROEDGE',
+  QUICK_PROFIT_V1: 'Quick profit shadow engine',
   v1: 'Crypto V1', // crypto shadow uses engine_version = 'v1'
 }
 
 const RETIRED_SHADOW_VERSIONS = new Set(['SWING_V1_12_15DEC', 'SWING_FAV8_SHADOW'])
+
+const VERSION_SOURCE_ALIASES: Record<string, { engine_key: string; engine_version: string }> = {
+  QUICK_PROFIT_V1: { engine_key: 'SCALP', engine_version: 'SCALP_V1_MICROEDGE' },
+}
 
 async function fetchJournalTotals(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: closedTrades, error: closedTradesError } = await supabase
@@ -147,6 +152,14 @@ export async function GET(request: NextRequest) {
     }
 
     for (const version of engineVersions || []) {
+      const versionKey = (version.engine_version || '').toUpperCase()
+      if (versionKey === 'SCALP_V1_MICROEDGE') {
+        // Legacy SCALP entry is superseded by the Quick profit alias
+        continue
+      }
+      const alias = VERSION_SOURCE_ALIASES[versionKey]
+      const sourceEngineKey = alias?.engine_key ?? version.engine_key
+      const sourceEngineVersion = alias?.engine_version ?? version.engine_version
       if (RETIRED_SHADOW_VERSIONS.has((version.engine_version || '').toUpperCase())) {
         continue
       }
@@ -207,8 +220,8 @@ export async function GET(request: NextRequest) {
           const { data: trades, error: tradesError } = await supabase
             .from('engine_crypto_trades')
             .select('symbol, side, price, qty, pnl, executed_at, action')
-            .eq('engine_key', version.engine_key)
-            .eq('version', version.engine_version)
+            .eq('engine_key', sourceEngineKey)
+            .eq('version', sourceEngineVersion)
             .order('executed_at', { ascending: false })
 
           if (tradesError) {
@@ -230,8 +243,8 @@ export async function GET(request: NextRequest) {
           const { data: portfolio, error: portfolioError } = await supabase
             .from('engine_crypto_portfolio_state')
             .select('equity, unrealized, realized, ts')
-            .eq('engine_key', version.engine_key)
-            .eq('version', version.engine_version)
+            .eq('engine_key', sourceEngineKey)
+            .eq('version', sourceEngineVersion)
             .order('ts', { ascending: true })
             .limit(1000)
 
@@ -251,8 +264,8 @@ export async function GET(request: NextRequest) {
           const { data: openPositions, error: openError } = await supabase
             .from('engine_crypto_positions')
             .select('unrealized_pnl')
-            .eq('engine_key', version.engine_key)
-            .eq('version', version.engine_version)
+            .eq('engine_key', sourceEngineKey)
+            .eq('version', sourceEngineVersion)
             .eq('status', 'open')
 
           if (!openError && openPositions) {
@@ -265,8 +278,8 @@ export async function GET(request: NextRequest) {
           const { data: trades, error: tradesError } = await supabase
             .from('engine_trades')
             .select('ticker, side, entry_price, exit_price, realized_pnl, realized_r, closed_at, opened_at')
-            .eq('engine_key', version.engine_key)
-            .eq('engine_version', version.engine_version)
+            .eq('engine_key', sourceEngineKey)
+            .eq('engine_version', sourceEngineVersion)
             .eq('run_mode', version.run_mode)
             .order('closed_at', { ascending: false })
 
@@ -289,8 +302,8 @@ export async function GET(request: NextRequest) {
           const { data: portfolio, error: portfolioError } = await supabase
             .from('engine_portfolios')
             .select('equity, updated_at')
-            .eq('engine_key', version.engine_key)
-            .eq('engine_version', version.engine_version)
+            .eq('engine_key', sourceEngineKey)
+            .eq('engine_version', sourceEngineVersion)
             .eq('run_mode', version.run_mode)
 
           if (portfolioError) {
@@ -307,6 +320,21 @@ export async function GET(request: NextRequest) {
                 },
               ]
             : []
+
+          const { data: openShadowPositions, error: openShadowError } = await supabase
+            .from('engine_positions')
+            .select('unrealized_pnl')
+            .eq('engine_key', sourceEngineKey)
+            .eq('engine_version', sourceEngineVersion)
+            .eq('run_mode', version.run_mode)
+            .eq('status', 'OPEN')
+
+          if (!openShadowError && openShadowPositions) {
+            unrealizedPnl = openShadowPositions.reduce(
+              (sum: number, pos: any) => sum + Number(pos.unrealized_pnl ?? 0),
+              0,
+            )
+          }
         }
       }
 
@@ -388,7 +416,7 @@ export async function GET(request: NextRequest) {
       // Fetch engine parameters if applicable
       let engineParams: any = {}
       
-      if (version.engine_version === 'SCALP_V1_MICROEDGE') {
+      if ((sourceEngineVersion || '').toUpperCase() === 'SCALP_V1_MICROEDGE') {
         // Always start with defaults
         engineParams = {
           min_confidence_pct: 60,
@@ -407,7 +435,7 @@ export async function GET(request: NextRequest) {
           .from('scalp_engine_config')
           .select('*')
           .eq('engine_key', 'SCALP')
-          .eq('engine_version', version.engine_version)
+          .eq('engine_version', sourceEngineVersion)
           .single()
 
         if (!paramsError && params) {

@@ -7,6 +7,8 @@ type QuickProfitMetrics = {
   trades_won: number;
   trades_lost: number;
   win_rate_pct: number;
+  realized_pnl?: number;
+  unrealized_pnl?: number;
   total_pnl: number;
   avg_trade_r: number;
   open_positions: number;
@@ -144,12 +146,22 @@ export function QuickProfitEngine() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         <MetricCard label="Current equity" value={`$${(quickMetrics?.current_equity ?? 0).toLocaleString()}`} />
         <MetricCard
           label="Total P&L"
           value={`$${(quickMetrics?.total_pnl ?? 0).toFixed(0)}`}
           accent={quickMetrics?.total_pnl >= 0 ? 'positive' : 'negative'}
+        />
+        <MetricCard
+          label="Realized P&L"
+          value={`$${(quickMetrics?.realized_pnl ?? 0).toFixed(0)}`}
+          accent={(quickMetrics?.realized_pnl ?? 0) >= 0 ? 'positive' : 'negative'}
+        />
+        <MetricCard
+          label="Unrealized P&L"
+          value={`$${(quickMetrics?.unrealized_pnl ?? 0).toFixed(0)}`}
+          accent={(quickMetrics?.unrealized_pnl ?? 0) >= 0 ? 'positive' : 'negative'}
         />
         <MetricCard label="Win rate" value={`${quickMetrics?.win_rate_pct?.toFixed(1) ?? '0'}%`} />
         <MetricCard

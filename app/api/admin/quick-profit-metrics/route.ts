@@ -3,6 +3,8 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 const ENGINE_KEY = 'QUICK_PROFIT';
 const ENGINE_VERSION = 'QUICK_PROFIT_V1';
+const SOURCE_ENGINE_KEY = 'SCALP';
+const SOURCE_ENGINE_VERSION = 'SCALP_V1_MICROEDGE';
 const RUN_MODE = 'SHADOW';
 
 const supabase = supabaseAdmin;
@@ -25,23 +27,23 @@ export async function GET() {
       supabase
         .from('engine_portfolios')
         .select('equity, starting_equity, allocated_notional')
-        .eq('engine_key', ENGINE_KEY)
-        .eq('engine_version', ENGINE_VERSION)
+        .eq('engine_key', SOURCE_ENGINE_KEY)
+        .eq('engine_version', SOURCE_ENGINE_VERSION)
         .eq('run_mode', RUN_MODE)
         .maybeSingle(),
       supabase
         .from('engine_trades')
         .select('id, ticker, side, entry_price, exit_price, realized_pnl, realized_r, opened_at, closed_at')
-        .eq('engine_key', ENGINE_KEY)
-        .eq('engine_version', ENGINE_VERSION)
+        .eq('engine_key', SOURCE_ENGINE_KEY)
+        .eq('engine_version', SOURCE_ENGINE_VERSION)
         .eq('run_mode', RUN_MODE)
         .order('opened_at', { ascending: false })
         .limit(500),
       supabase
         .from('engine_positions')
-        .select('id')
-        .eq('engine_key', ENGINE_KEY)
-        .eq('engine_version', ENGINE_VERSION)
+        .select('id, unrealized_pnl')
+        .eq('engine_key', SOURCE_ENGINE_KEY)
+        .eq('engine_version', SOURCE_ENGINE_VERSION)
         .eq('run_mode', RUN_MODE)
         .eq('status', 'OPEN'),
     ]);
@@ -52,12 +54,19 @@ export async function GET() {
     const totalPnL = closedTrades.reduce((sum, t) => sum + Number(t.realized_pnl ?? 0), 0);
     const totalR = closedTrades.reduce((sum, t) => sum + Number(t.realized_r ?? 0), 0);
 
+    const unrealizedPnL = (openPositions || []).reduce(
+      (sum, pos) => sum + Number(pos.unrealized_pnl ?? 0),
+      0,
+    );
+
     const metrics = {
       total_trades: closedTrades.length,
       trades_won: winCount,
       trades_lost: lossCount,
       win_rate_pct: closedTrades.length > 0 ? parseFloat(((winCount / closedTrades.length) * 100).toFixed(2)) : 0,
-      total_pnl: parseFloat(totalPnL.toFixed(2)),
+      realized_pnl: parseFloat(totalPnL.toFixed(2)),
+      unrealized_pnl: parseFloat(unrealizedPnL.toFixed(2)),
+      total_pnl: parseFloat((totalPnL + unrealizedPnL).toFixed(2)),
       avg_trade_r: closedTrades.length > 0 ? parseFloat((totalR / closedTrades.length).toFixed(4)) : 0,
       open_positions: (openPositions || []).length,
       max_positions: numberFromEnv('QUICK_PROFIT_MAX_POSITIONS', 10),
