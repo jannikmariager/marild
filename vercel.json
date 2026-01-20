@@ -2,19 +2,23 @@
   "crons": [
     {
       "path": "/api/jobs/bars-ingest",
-      "schedule": "*/1 14-20 * * 1-5"
+      "schedule": "*/1 14-20 * * 1-5",
+      "method": "POST"
     },
     {
       "path": "/api/jobs/bars-ingest",
-      "schedule": "0-10 21 * * 1-5"
+      "schedule": "0-10 21 * * 1-5",
+      "method": "POST"
     },
     {
       "path": "/api/jobs/signals-generate",
-      "schedule": "5 15-20 * * 1-5"
+      "schedule": "5 15-20 * * 1-5",
+      "method": "POST"
     },
     {
       "path": "/api/jobs/execute-engine",
-      "schedule": "*/3 15-20 * * 1-5"
+      "schedule": "*/3 15-20 * * 1-5",
+      "method": "POST"
     }
   ]
 }
