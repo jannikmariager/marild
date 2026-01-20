@@ -8,6 +8,10 @@ const SOURCE_ENGINE_VERSION = 'SCALP_V1_MICROEDGE';
 const RUN_MODE = 'SHADOW';
 
 const supabase = supabaseAdmin;
+const ENGINE_SOURCES = [
+  { engine_key: ENGINE_KEY, engine_version: ENGINE_VERSION },
+  { engine_key: SOURCE_ENGINE_KEY, engine_version: SOURCE_ENGINE_VERSION },
+];
 
 type EngineTradeRow = {
   id: string;
@@ -21,32 +25,63 @@ type EngineTradeRow = {
   closed_at: string | null;
 };
 
+function hasShadowData(result: Awaited<ReturnType<typeof fetchSourceData>>) {
+  if (!result) return false;
+  return Boolean(result.portfolio) || result.trades.length > 0 || result.openPositions.length > 0;
+}
+
+async function fetchSourceData(source: { engine_key: string; engine_version: string }) {
+  const [portfolioRes, tradesRes, positionsRes] = await Promise.all([
+    supabase
+      .from('engine_portfolios')
+      .select('equity, starting_equity, allocated_notional')
+      .eq('engine_key', source.engine_key)
+      .eq('engine_version', source.engine_version)
+      .eq('run_mode', RUN_MODE)
+      .maybeSingle(),
+    supabase
+      .from('engine_trades')
+      .select('id, ticker, side, entry_price, exit_price, realized_pnl, realized_r, opened_at, closed_at')
+      .eq('engine_key', source.engine_key)
+      .eq('engine_version', source.engine_version)
+      .eq('run_mode', RUN_MODE)
+      .order('opened_at', { ascending: false })
+      .limit(500),
+    supabase
+      .from('engine_positions')
+      .select('id, unrealized_pnl')
+      .eq('engine_key', source.engine_key)
+      .eq('engine_version', source.engine_version)
+      .eq('run_mode', RUN_MODE)
+      .eq('status', 'OPEN'),
+  ]);
+
+  if (portfolioRes.error) throw portfolioRes.error;
+  if (tradesRes.error) throw tradesRes.error;
+  if (positionsRes.error) throw positionsRes.error;
+
+  return {
+    portfolio: portfolioRes.data,
+    trades: tradesRes.data || [],
+    openPositions: positionsRes.data || [],
+  };
+}
+
 export async function GET() {
   try {
-    const [{ data: portfolio }, { data: trades }, { data: openPositions }] = await Promise.all([
-      supabase
-        .from('engine_portfolios')
-        .select('equity, starting_equity, allocated_notional')
-        .eq('engine_key', SOURCE_ENGINE_KEY)
-        .eq('engine_version', SOURCE_ENGINE_VERSION)
-        .eq('run_mode', RUN_MODE)
-        .maybeSingle(),
-      supabase
-        .from('engine_trades')
-        .select('id, ticker, side, entry_price, exit_price, realized_pnl, realized_r, opened_at, closed_at')
-        .eq('engine_key', SOURCE_ENGINE_KEY)
-        .eq('engine_version', SOURCE_ENGINE_VERSION)
-        .eq('run_mode', RUN_MODE)
-        .order('opened_at', { ascending: false })
-        .limit(500),
-      supabase
-        .from('engine_positions')
-        .select('id, unrealized_pnl')
-        .eq('engine_key', SOURCE_ENGINE_KEY)
-        .eq('engine_version', SOURCE_ENGINE_VERSION)
-        .eq('run_mode', RUN_MODE)
-        .eq('status', 'OPEN'),
-    ]);
+    let sourceToUse = ENGINE_SOURCES[0];
+    let data = await fetchSourceData(sourceToUse);
+
+    if (!hasShadowData(data) && ENGINE_SOURCES.length > 1) {
+      const fallbackSource = ENGINE_SOURCES[1];
+      const fallbackData = await fetchSourceData(fallbackSource);
+      if (hasShadowData(fallbackData)) {
+        sourceToUse = fallbackSource;
+        data = fallbackData;
+      }
+    }
+
+    const { portfolio, trades, openPositions } = data;
 
     const closedTrades = (trades || []).filter((t) => t.closed_at);
     const winCount = closedTrades.filter((t) => Number(t.realized_pnl ?? 0) > 0).length;

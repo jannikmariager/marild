@@ -17,10 +17,6 @@ const LABEL_OVERRIDES: Record<string, string> = {
 
 const RETIRED_SHADOW_VERSIONS = new Set(['SWING_V1_12_15DEC', 'SWING_FAV8_SHADOW'])
 
-const VERSION_SOURCE_ALIASES: Record<string, { engine_key: string; engine_version: string }> = {
-  QUICK_PROFIT_V1: { engine_key: 'SCALP', engine_version: 'SCALP_V1_MICROEDGE' },
-}
-
 async function fetchJournalTotals(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: closedTrades, error: closedTradesError } = await supabase
     .from('live_trades')
@@ -157,9 +153,8 @@ export async function GET(request: NextRequest) {
         // Legacy SCALP entry is superseded by the Quick profit alias
         continue
       }
-      const alias = VERSION_SOURCE_ALIASES[versionKey]
-      const sourceEngineKey = alias?.engine_key ?? version.engine_key
-      const sourceEngineVersion = alias?.engine_version ?? version.engine_version
+      const sourceEngineKey = version.engine_key
+      const sourceEngineVersion = version.engine_version
       if (RETIRED_SHADOW_VERSIONS.has((version.engine_version || '').toUpperCase())) {
         continue
       }

@@ -3,6 +3,8 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 const ENGINE_KEY = 'QUICK_PROFIT';
 const ENGINE_VERSION = 'QUICK_PROFIT_V1';
+const SOURCE_ENGINE_KEY = 'SCALP';
+const SOURCE_ENGINE_VERSION = 'SCALP_V1_MICROEDGE';
 const RUN_MODE = 'SHADOW';
 
 const DEFAULT_CONFIG = {
@@ -20,6 +22,10 @@ const DEFAULT_CONFIG = {
 };
 
 const supabase = supabaseAdmin;
+const ENGINE_SOURCES = [
+  { engine_key: ENGINE_KEY, engine_version: ENGINE_VERSION },
+  { engine_key: SOURCE_ENGINE_KEY, engine_version: SOURCE_ENGINE_VERSION },
+];
 
 type DecisionRow = {
   id: string;
@@ -33,34 +39,66 @@ type DecisionRow = {
   created_at: string;
 };
 
+type SourceData = {
+  portfolio: { equity: number; starting_equity: number; allocated_notional: number; updated_at: string } | null;
+  openPositions: Array<{ risk_dollars?: number | null }>;
+  decisionRows: DecisionRow[];
+};
+
+function hasSourceData(data: SourceData) {
+  return Boolean(data.portfolio) || data.openPositions.length > 0 || data.decisionRows.length > 0;
+}
+
+async function fetchSourceData(source: { engine_key: string; engine_version: string }): Promise<SourceData> {
+  const [portfolioRes, positionsRes, decisionsRes] = await Promise.all([
+    supabase
+      .from('engine_portfolios')
+      .select('equity, starting_equity, allocated_notional, updated_at')
+      .eq('engine_key', source.engine_key)
+      .eq('engine_version', source.engine_version)
+      .eq('run_mode', RUN_MODE)
+      .maybeSingle(),
+    supabase
+      .from('engine_positions')
+      .select('risk_dollars')
+      .eq('engine_key', source.engine_key)
+      .eq('engine_version', source.engine_version)
+      .eq('run_mode', RUN_MODE)
+      .eq('status', 'OPEN'),
+    supabase
+      .from('live_signal_decision_log')
+      .select('id, ticker, decision, reason_context, created_at, reason_code')
+      .eq('engine_key', source.engine_key)
+      .eq('engine_version', source.engine_version)
+      .eq('run_mode', RUN_MODE)
+      .order('created_at', { ascending: false })
+      .limit(50),
+  ]);
+
+  if (portfolioRes.error) throw portfolioRes.error;
+  if (positionsRes.error) throw positionsRes.error;
+  if (decisionsRes.error) throw decisionsRes.error;
+
+  return {
+    portfolio: portfolioRes.data,
+    openPositions: positionsRes.data || [],
+    decisionRows: decisionsRes.data || [],
+  };
+}
+
 export async function GET() {
   try {
     const config = buildQuickProfitConfig();
 
-    const [{ data: portfolio }, { data: openPositions }, { data: decisionRows }] = await Promise.all([
-      supabase
-        .from('engine_portfolios')
-        .select('equity, starting_equity, allocated_notional, updated_at')
-        .eq('engine_key', ENGINE_KEY)
-        .eq('engine_version', ENGINE_VERSION)
-        .eq('run_mode', RUN_MODE)
-        .maybeSingle(),
-      supabase
-        .from('engine_positions')
-        .select('risk_dollars')
-        .eq('engine_key', ENGINE_KEY)
-        .eq('engine_version', ENGINE_VERSION)
-        .eq('run_mode', RUN_MODE)
-        .eq('status', 'OPEN'),
-      supabase
-        .from('live_signal_decision_log')
-        .select('id, ticker, decision, reason_context, created_at, reason_code')
-        .eq('engine_key', ENGINE_KEY)
-        .eq('engine_version', ENGINE_VERSION)
-        .eq('run_mode', RUN_MODE)
-        .order('created_at', { ascending: false })
-        .limit(50),
-    ]);
+    let sourceData = await fetchSourceData(ENGINE_SOURCES[0]);
+    if (!hasSourceData(sourceData) && ENGINE_SOURCES.length > 1) {
+      const fallbackData = await fetchSourceData(ENGINE_SOURCES[1]);
+      if (hasSourceData(fallbackData)) {
+        sourceData = fallbackData;
+      }
+    }
+
+    const { portfolio, openPositions, decisionRows } = sourceData;
 
     const openRiskDollars = (openPositions || []).reduce(
       (sum: number, pos: { risk_dollars?: number | null }) => sum + Number(pos.risk_dollars ?? 0),
