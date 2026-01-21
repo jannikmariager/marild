@@ -29,6 +29,56 @@ type QuickProfitTrade = {
   side: string | null;
   status: string;
 };
+type QuickProfitOpenPosition = {
+  id: string;
+  ticker: string | null;
+  side: string | null;
+  qty: number | null;
+  entry_price: number | null;
+  entry_time: string | null;
+  stop_loss: number | null;
+  take_profit: number | null;
+  notional_at_entry: number | null;
+  risk_dollars: number | null;
+  mark_price: number | null;
+  pnl_dollars: number | null;
+  pnl_pct: number | null;
+  be_activated_at: string | null;
+  breakeven_active: boolean;
+  partial_taken: boolean;
+  trail_active: boolean;
+  trail_stop_price: number | null;
+  trail_peak_pnl: number | null;
+};
+
+type QuickProfitClosedPosition = {
+  id: string;
+  ticker: string | null;
+  side: string | null;
+  qty: number | null;
+  entry_price: number | null;
+  entry_time: string | null;
+  exit_price: number | null;
+  exit_time: string | null;
+  realized_pnl: number | null;
+  realized_r: number | null;
+  pnl_pct: number | null;
+  exit_reason: string | null;
+  be_activated_at: string | null;
+  breakeven_active: boolean;
+  partial_taken: boolean;
+  trail_active: boolean;
+  trail_stop_price: number | null;
+  trail_peak_pnl: number | null;
+};
+
+type QuickProfitMetricsResponse = {
+  status: string;
+  metrics: QuickProfitMetrics;
+  trades: QuickProfitTrade[];
+  open_positions: QuickProfitOpenPosition[];
+  recent_closed_positions: QuickProfitClosedPosition[];
+};
 
 type QuickProfitDecision = {
   id: string;
@@ -56,7 +106,7 @@ type QuickProfitConfig = {
 
 export function QuickProfitEngine() {
   const [data, setData] = useState<{
-    metrics: { status: string; metrics: QuickProfitMetrics; trades: QuickProfitTrade[] };
+    metrics: QuickProfitMetricsResponse;
     params: {
       config: QuickProfitConfig;
       portfolio: {
@@ -133,16 +183,19 @@ export function QuickProfitEngine() {
     return <div>No data</div>;
   }
 
-  const { metrics, params } = data;
-  const quickMetrics = metrics.metrics;
+  const { metrics: metricsPayload, params } = data;
+  const quickMetrics = metricsPayload.metrics;
   const config = params.config;
+  const openPositions = metricsPayload.open_positions ?? [];
+  const closedPositions = metricsPayload.recent_closed_positions ?? [];
+  const trades = metricsPayload.trades ?? [];
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-foreground">Quick profit shadow engine</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          QUICK_PROFIT_V1 · Breakeven + partial take-profit automation running against the live SWING universe
+          QUICK_PROFIT_V1 - Breakeven + partial take-profit automation running against the live SWING universe
         </p>
       </div>
 
@@ -193,6 +246,9 @@ export function QuickProfitEngine() {
         <MetricCard label="Entry rate" value={`${params.statistics.entry_rate}%`} />
       </div>
 
+      <OpenPositionsPanel positions={openPositions} />
+
+      <ClosedPositionsPanel positions={closedPositions} />
       {params.recent_decisions?.length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
@@ -258,7 +314,7 @@ export function QuickProfitEngine() {
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="px-4 py-3 border-b border-gray-200">
           <h3 className="text-sm font-semibold text-gray-900">Recent trades</h3>
-          <p className="text-xs text-muted-foreground">Last {metrics.trades.length} closed engine trades</p>
+          <p className="text-xs text-muted-foreground">Last {trades.length} closed engine trades</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -274,7 +330,7 @@ export function QuickProfitEngine() {
               </tr>
             </thead>
             <tbody>
-              {metrics.trades.map((trade) => {
+              {trades.map((trade) => {
                 const pnl = Number(trade.pnl_dollars ?? 0)
                 return (
                   <tr key={trade.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -357,4 +413,267 @@ function ConfigItem({ label, value }: ConfigItemProps) {
       <dd className="text-sm font-semibold text-gray-900">{value}</dd>
     </div>
   )
+}
+
+
+function OpenPositionsPanel({ positions }: { positions: QuickProfitOpenPosition[] }) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200">
+      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Open Quick profit positions</h3>
+          <p className="text-xs text-muted-foreground">Live mark-based P/L with breakeven & trailing state</p>
+        </div>
+        <span className="text-xs font-medium text-muted-foreground">{positions.length} open</span>
+      </div>
+      {positions.length === 0 ? (
+        <EmptyState message="No open positions right now." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="px-3 py-2 text-left font-semibold">Ticker</th>
+                <th className="px-3 py-2 text-left font-semibold">Entry</th>
+                <th className="px-3 py-2 text-left font-semibold">Mark</th>
+                <th className="px-3 py-2 text-right font-semibold">P/L</th>
+                <th className="px-3 py-2 text-left font-semibold">Management</th>
+                <th className="px-3 py-2 text-left font-semibold">Stops</th>
+                <th className="px-3 py-2 text-left font-semibold">Risk</th>
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((pos) => {
+                const pnlClass = pnlColor(pos.pnl_dollars)
+                return (
+                  <tr key={pos.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-3 py-2">
+                      <div className="font-semibold">{pos.ticker ?? '—'}</div>
+                      <div className="text-[11px] text-muted-foreground capitalize">
+                        {pos.side?.toLowerCase() ?? '—'} - {formatQty(pos.qty)} sh
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-mono text-sm">{formatCurrency(pos.entry_price)}</div>
+                      <div className="text-[11px] text-muted-foreground">{formatDateTime(pos.entry_time)}</div>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-sm">{formatCurrency(pos.mark_price)}</td>
+                    <td className={`px-3 py-2 text-right font-semibold ${pnlClass}`}>
+                      <div className="font-mono">{formatSignedCurrency(pos.pnl_dollars)}</div>
+                      <div className="text-[11px]">{formatSignedPercent(pos.pnl_pct)}</div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <ManagementBadges
+                        breakevenActive={pos.breakeven_active}
+                        trailActive={pos.trail_active}
+                        partialTaken={pos.partial_taken}
+                        beActivatedAt={pos.be_activated_at}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-700 space-y-1">
+                      <div>SL {formatCurrency(pos.stop_loss)}</div>
+                      {pos.trail_stop_price !== null && <div>Trail {formatCurrency(pos.trail_stop_price)}</div>}
+                      <div>TP {formatCurrency(pos.take_profit)}</div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-700 space-y-1">
+                      <div>Risk {formatCurrency(pos.risk_dollars)}</div>
+                      <div className="text-muted-foreground">Notional {formatCurrency(pos.notional_at_entry)}</div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClosedPositionsPanel({ positions }: { positions: QuickProfitClosedPosition[] }) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200">
+      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Recently closed positions</h3>
+          <p className="text-xs text-muted-foreground">Exit reason plus realized P/L cues</p>
+        </div>
+        <span className="text-xs font-medium text-muted-foreground">{positions.length} shown</span>
+      </div>
+      {positions.length === 0 ? (
+        <EmptyState message="No shadow closes yet." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="px-3 py-2 text-left font-semibold">Ticker</th>
+                <th className="px-3 py-2 text-left font-semibold">Entry / Exit</th>
+                <th className="px-3 py-2 text-right font-semibold">Realized P/L</th>
+                <th className="px-3 py-2 text-left font-semibold">Exit reason</th>
+                <th className="px-3 py-2 text-left font-semibold">Management</th>
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((pos) => {
+                const pnlClass = pnlColor(pos.realized_pnl)
+                return (
+                  <tr key={pos.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-3 py-2">
+                      <div className="font-semibold">{pos.ticker ?? '—'}</div>
+                      <div className="text-[11px] text-muted-foreground capitalize">
+                        {pos.side?.toLowerCase() ?? '—'} - {formatQty(pos.qty)} sh
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 space-y-1">
+                      <div className="text-xs">
+                        <span className="font-medium text-gray-900">Entry:</span> {formatCurrency(pos.entry_price)}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">{formatDateTime(pos.entry_time)}</div>
+                      <div className="text-xs pt-1">
+                        <span className="font-medium text-gray-900">Exit:</span> {formatCurrency(pos.exit_price)}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">{formatDateTime(pos.exit_time)}</div>
+                    </td>
+                    <td className={`px-3 py-2 text-right font-semibold ${pnlClass}`}>
+                      <div className="font-mono">{formatSignedCurrency(pos.realized_pnl)}</div>
+                      <div className="text-[11px]">{formatSignedPercent(pos.pnl_pct)}</div>
+                      <div className="text-[11px]">{formatSignedR(pos.realized_r)}</div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <ExitReasonPill reason={pos.exit_reason} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <ManagementBadges
+                        breakevenActive={pos.breakeven_active}
+                        trailActive={pos.trail_active}
+                        partialTaken={pos.partial_taken}
+                        beActivatedAt={pos.be_activated_at}
+                      />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EmptyState({ message }: { message: string }) {
+  return <div className="px-4 py-6 text-center text-sm text-muted-foreground">{message}</div>
+}
+
+function formatCurrency(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function formatSignedCurrency(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  const abs = Math.abs(Number(value)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `${Number(value) >= 0 ? '+' : '-'}$${abs}`
+}
+
+function formatSignedPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  const abs = Math.abs(Number(value)).toFixed(2)
+  return `${Number(value) >= 0 ? '+' : '-'}${abs}%`
+}
+
+function formatSignedR(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  const abs = Math.abs(Number(value)).toFixed(2)
+  return `${Number(value) >= 0 ? '+' : '-'}${abs}R`
+}
+
+function formatQty(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString()
+}
+
+function pnlColor(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'text-gray-700'
+  if (value > 0) return 'text-emerald-600'
+  if (value < 0) return 'text-rose-600'
+  return 'text-gray-700'
+}
+
+function ManagementBadges({
+  breakevenActive,
+  trailActive,
+  partialTaken,
+  beActivatedAt,
+}: {
+  breakevenActive: boolean
+  trailActive: boolean
+  partialTaken: boolean
+  beActivatedAt?: string | null
+}) {
+  const badges: Array<{ label: string; classes: string; title?: string }> = []
+  if (breakevenActive) {
+    badges.push({
+      label: 'Breakeven',
+      classes: 'bg-emerald-100 text-emerald-800',
+      title: beActivatedAt ? `Activated ${formatDateTime(beActivatedAt)}` : undefined,
+    })
+  }
+  if (trailActive) {
+    badges.push({ label: 'Trailing', classes: 'bg-blue-100 text-blue-800' })
+  }
+  if (partialTaken) {
+    badges.push({ label: 'Partial', classes: 'bg-amber-100 text-amber-800' })
+  }
+
+  if (badges.length === 0) {
+    return <span className="text-xs text-muted-foreground">—</span>
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {badges.map((badge) => (
+        <span
+          key={badge.label}
+          className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${badge.classes}`}
+          title={badge.title}
+        >
+          {badge.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+const EXIT_REASON_LABELS: Record<string, string> = {
+  TAKE_PROFIT: 'Take profit',
+  TRAILING_STOP: 'Trailing stop',
+  BREAKEVEN: 'Breakeven stop',
+  STOP_LOSS: 'Stop-loss',
+  MANUAL_EXIT: 'Manual exit',
+  EARLY_PROTECTION: 'Early protection',
+  PARTIAL_EXIT: 'Partial exit',
+};
+
+function humanizeExitReason(reason: string | null | undefined) {
+  if (!reason) return '—'
+  const key = reason.toUpperCase()
+  if (EXIT_REASON_LABELS[key]) return EXIT_REASON_LABELS[key]
+  return reason.replace(/_/g, ' ').toLowerCase().replace(/(^|\s)\S/g, (s) => s.toUpperCase())
+}
+
+function ExitReasonPill({ reason }: { reason: string | null | undefined }) {
+  const label = humanizeExitReason(reason)
+  if (!reason) {
+    return <span className="text-xs text-muted-foreground">—</span>
+  }
+  return <span className="inline-flex px-2 py-0.5 text-[11px] rounded-full bg-slate-100 text-slate-700">{label}</span>
 }

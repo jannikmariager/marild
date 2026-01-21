@@ -7,15 +7,20 @@ import { createClient } from '@/lib/supabaseServer';
 
 const stripeSecret =
   process.env.STRIPE_SECRET_KEY ??
-  (process.env.NODE_ENV === 'production'
-    ? undefined
-    : 'sk_test_placeholder');
-if (!stripeSecret) {
-  throw new Error('STRIPE_SECRET_KEY is not set');
+  (process.env.NODE_ENV === 'production' ? undefined : 'sk_test_placeholder');
+const stripe =
+  stripeSecret && stripeSecret.trim().length > 0
+    ? new Stripe(stripeSecret.trim(), {
+        apiVersion: '2024-06-20' as Stripe.LatestApiVersion,
+      })
+    : null;
+
+function requireStripe() {
+  if (!stripe) {
+    throw new Error('STRIPE_SECRET_KEY is not set');
+  }
+  return stripe;
 }
-const stripe = new Stripe(stripeSecret.trim(), {
-  apiVersion: '2024-06-20' as Stripe.LatestApiVersion,
-});
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,7 +42,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Stripe price not configured' }, { status: 500 });
     }
 
-    const session = await stripe.checkout.sessions.create({
+    const stripeClient = requireStripe();
+    const session = await stripeClient.checkout.sessions.create({
       mode: 'subscription',
       customer_email: user.email,
       line_items: [

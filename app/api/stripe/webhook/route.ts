@@ -4,25 +4,34 @@ import { createClient } from '@supabase/supabase-js';
 
 const stripeSecret =
   process.env.STRIPE_SECRET_KEY ??
-  (process.env.NODE_ENV === 'production'
-    ? undefined
-    : 'sk_test_placeholder');
-if (!stripeSecret) {
-  throw new Error('STRIPE_SECRET_KEY is not set');
-}
-const stripe = new Stripe(stripeSecret.trim(), {
-  // Use a stable Stripe API version; cast to avoid over-strict literal typing
-  apiVersion: '2024-06-20' as Stripe.LatestApiVersion,
-});
+  (process.env.NODE_ENV === 'production' ? undefined : 'sk_test_placeholder');
+const stripe =
+  stripeSecret && stripeSecret.trim().length > 0
+    ? new Stripe(stripeSecret.trim(), {
+        // Use a stable Stripe API version; cast to avoid over-strict literal typing
+        apiVersion: '2024-06-20' as Stripe.LatestApiVersion,
+      })
+    : null;
+
 const endpointSecret =
   process.env.STRIPE_WEBHOOK_SECRET ??
-  (process.env.NODE_ENV === 'production'
-    ? undefined
-    : 'whsec_placeholder');
-if (!endpointSecret) {
-  throw new Error('STRIPE_WEBHOOK_SECRET is not set');
+  (process.env.NODE_ENV === 'production' ? undefined : 'whsec_placeholder');
+const sanitizedEndpointSecret =
+  endpointSecret && endpointSecret.trim().length > 0 ? endpointSecret.trim() : null;
+
+function requireStripe() {
+  if (!stripe) {
+    throw new Error('STRIPE_SECRET_KEY is not set');
+  }
+  return stripe;
 }
-const typedEndpointSecret: string = endpointSecret;
+
+function requireWebhookSecret(): string {
+  if (!sanitizedEndpointSecret) {
+    throw new Error('STRIPE_WEBHOOK_SECRET is not set');
+  }
+  return sanitizedEndpointSecret;
+}
 type SubscriptionTier = 'pro' | 'expired';
 
 // Initialize Supabase with service role for admin operations
@@ -119,9 +128,11 @@ export async function POST(req: NextRequest) {
   }
 
   let event: Stripe.Event;
+  const stripeClient = requireStripe();
+  const typedEndpointSecret = requireWebhookSecret();
 
   try {
-    event = stripe.webhooks.constructEvent(body, signature, typedEndpointSecret);
+    event = stripeClient.webhooks.constructEvent(body, signature, typedEndpointSecret);
   } catch (err) {
     console.error('Webhook signature verification failed:', err);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
@@ -147,7 +158,7 @@ export async function POST(req: NextRequest) {
         try {
           let customerEmail: string | null = null;
           if (typeof subscription.customer === 'string') {
-            const customer = await stripe.customers.retrieve(subscription.customer);
+            const customer = await stripeClient.customers.retrieve(subscription.customer);
             if ('email' in customer && customer.email) {
               customerEmail = customer.email;
             }

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 const STARTING_EQUITY = 100000
@@ -45,8 +46,10 @@ type StockShadowData = {
   overrideCurrentEquity: number | null
 }
 
+type ServiceSupabaseClient = SupabaseClient<any, any, any, any, any>
+
 async function fetchStockShadowData(
-  supabase: ReturnType<typeof createServiceClient>,
+  supabase: ServiceSupabaseClient,
   params: { engine_key: string; engine_version: string; run_mode: string },
 ): Promise<StockShadowData> {
   const { engine_key, engine_version, run_mode } = params

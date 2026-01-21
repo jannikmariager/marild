@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { fetchLatestMinuteBars } from '@/lib/data/alpaca';
 
 const ENGINE_KEY = 'QUICK_PROFIT';
 const ENGINE_VERSION = 'QUICK_PROFIT_V1';
@@ -25,13 +26,63 @@ type EngineTradeRow = {
   closed_at: string | null;
 };
 
+type EnginePositionRow = {
+  id: string;
+  ticker: string | null;
+  side: 'LONG' | 'SHORT' | null;
+  qty: number | null;
+  entry_price: number | null;
+  stop_loss: number | null;
+  take_profit: number | null;
+  opened_at: string | null;
+  status: 'OPEN' | 'CLOSED';
+  closed_at: string | null;
+  exit_price: number | null;
+  exit_reason: string | null;
+  realized_pnl: number | null;
+  realized_r: number | null;
+  risk_dollars: number | null;
+  notional_at_entry: number | null;
+  be_activated_at: string | null;
+  partial_taken: boolean | null;
+  trail_active: boolean | null;
+  trail_stop_price: number | null;
+  trail_peak_pnl: number | null;
+  management_meta: Record<string, unknown> | null;
+};
+
 function hasShadowData(result: Awaited<ReturnType<typeof fetchSourceData>>) {
   if (!result) return false;
   return result.trades.length > 0 || result.openPositions.length > 0;
 }
 
+const POSITION_COLUMNS = [
+  'id',
+  'ticker',
+  'side',
+  'qty',
+  'entry_price',
+  'stop_loss',
+  'take_profit',
+  'opened_at',
+  'status',
+  'closed_at',
+  'exit_price',
+  'exit_reason',
+  'realized_pnl',
+  'realized_r',
+  'risk_dollars',
+  'notional_at_entry',
+  'be_activated_at',
+  'partial_taken',
+  'trail_active',
+  'trail_stop_price',
+  'trail_peak_pnl',
+  'management_meta',
+];
+
 async function fetchSourceData(source: { engine_key: string; engine_version: string }) {
-  const [portfolioRes, tradesRes, positionsRes] = await Promise.all([
+  const [portfolioRes, tradesRes, openPositionsRes, closedPositionsRes] = await Promise.all([
     supabase
       .from('engine_portfolios')
       .select('equity, starting_equity, allocated_notional')
@@ -49,22 +100,196 @@ async function fetchSourceData(source: { engine_key: string; engine_version: str
       .limit(500),
     supabase
       .from('engine_positions')
-      .select('id')
+      .select(POSITION_COLUMNS.join(', '))
       .eq('engine_key', source.engine_key)
       .eq('engine_version', source.engine_version)
       .eq('run_mode', RUN_MODE)
       .eq('status', 'OPEN'),
+    supabase
+      .from('engine_positions')
+      .select(POSITION_COLUMNS.join(', '))
+      .eq('engine_key', source.engine_key)
+      .eq('engine_version', source.engine_version)
+      .eq('run_mode', RUN_MODE)
+      .eq('status', 'CLOSED')
+      .order('closed_at', { ascending: false })
+      .limit(100),
   ]);
 
   if (portfolioRes.error) throw portfolioRes.error;
   if (tradesRes.error) throw tradesRes.error;
-  if (positionsRes.error) throw positionsRes.error;
+  if (openPositionsRes.error) throw openPositionsRes.error;
+  if (closedPositionsRes.error) throw closedPositionsRes.error;
 
   return {
     portfolio: portfolioRes.data,
     trades: tradesRes.data || [],
-    openPositions: positionsRes.data || [],
+    openPositions: ((openPositionsRes.data || []) as unknown) as EnginePositionRow[],
+    closedPositions: ((closedPositionsRes.data || []) as unknown) as EnginePositionRow[],
   };
+}
+
+type FormattedOpenPosition = {
+  id: string;
+  ticker: string | null;
+  side: 'LONG' | 'SHORT' | null;
+  qty: number;
+  entry_price: number;
+  entry_time: string | null;
+  stop_loss: number | null;
+  take_profit: number | null;
+  notional_at_entry: number | null;
+  risk_dollars: number | null;
+  mark_price: number | null;
+  pnl_dollars: number | null;
+  pnl_pct: number | null;
+  be_activated_at: string | null;
+  breakeven_active: boolean;
+  partial_taken: boolean;
+  trail_active: boolean;
+  trail_stop_price: number | null;
+  trail_peak_pnl: number | null;
+  management_meta: Record<string, unknown> | null;
+};
+
+type FormattedClosedPosition = {
+  id: string;
+  ticker: string | null;
+  side: 'LONG' | 'SHORT' | null;
+  qty: number | null;
+  entry_price: number | null;
+  entry_time: string | null;
+  exit_price: number | null;
+  exit_time: string | null;
+  realized_pnl: number | null;
+  realized_r: number | null;
+  pnl_pct: number | null;
+  exit_reason: string | null;
+  be_activated_at: string | null;
+  breakeven_active: boolean;
+  partial_taken: boolean;
+  trail_active: boolean;
+  trail_stop_price: number | null;
+  trail_peak_pnl: number | null;
+};
+
+function directionMultiplier(side: 'LONG' | 'SHORT' | null) {
+  return side === 'SHORT' ? -1 : 1;
+}
+function toNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function enrichOpenPositions(positions: EnginePositionRow[]): Promise<FormattedOpenPosition[]> {
+  if (!positions || positions.length === 0) return [];
+
+  const tickers = Array.from(
+    new Set(
+      positions
+        .map((pos) => (pos.ticker || '').trim().toUpperCase())
+        .filter((ticker) => ticker.length > 0),
+    ),
+  );
+
+  let latestBars: Record<string, { c: number }> = {};
+  if (tickers.length > 0) {
+    try {
+      latestBars = await fetchLatestMinuteBars(tickers);
+    } catch (err) {
+      console.error('[quick-profit-metrics] Failed to fetch latest bars', err);
+    }
+  }
+
+  return positions.map((pos) => {
+    const ticker = (pos.ticker || '').toUpperCase();
+    const entryPriceRaw = toNumber(pos.entry_price);
+    const entryPrice = entryPriceRaw ?? 0;
+    const qtyRaw = toNumber(pos.qty);
+    const qty = qtyRaw ?? 0;
+    const bar = ticker ? latestBars[ticker] : null;
+    const meta = (pos.management_meta as Record<string, unknown> | null) ?? null;
+    let metaMarkPrice: number | null = null;
+    if (meta) {
+      const rawMetaPrice =
+        (meta as Record<string, unknown>).last_quote_price ??
+        (meta as Record<string, unknown>).mark_price ??
+        (meta as Record<string, unknown>).last_price ??
+        null;
+      if (typeof rawMetaPrice === 'number' || typeof rawMetaPrice === 'string') {
+        metaMarkPrice = toNumber(rawMetaPrice);
+      }
+    }
+    const markPrice = bar?.c !== undefined ? Number(bar.c) : metaMarkPrice ?? entryPrice;
+    const direction = directionMultiplier(pos.side);
+    const pnlDollars =
+      qtyRaw !== null && entryPriceRaw !== null && markPrice !== null
+        ? Number(((markPrice - entryPrice) * qty * direction).toFixed(2))
+        : null;
+    const pnlPct =
+      entryPriceRaw !== null && markPrice !== null
+        ? Number((((markPrice - entryPrice) / entryPrice) * 100 * direction).toFixed(2))
+        : null;
+
+    return {
+      id: pos.id,
+      ticker: pos.ticker,
+      side: pos.side,
+      qty,
+      entry_price: entryPrice,
+      entry_time: pos.opened_at,
+      stop_loss: toNumber(pos.stop_loss),
+      take_profit: toNumber(pos.take_profit),
+      notional_at_entry: toNumber(pos.notional_at_entry),
+      risk_dollars: toNumber(pos.risk_dollars),
+      mark_price: markPrice ?? null,
+      pnl_dollars: pnlDollars,
+      pnl_pct: pnlPct,
+      be_activated_at: pos.be_activated_at,
+      breakeven_active: Boolean(pos.be_activated_at),
+      partial_taken: Boolean(pos.partial_taken),
+      trail_active: Boolean(pos.trail_active),
+      trail_stop_price: toNumber(pos.trail_stop_price),
+      trail_peak_pnl: toNumber(pos.trail_peak_pnl),
+      management_meta: pos.management_meta ?? null,
+    };
+  });
+}
+
+function formatClosedPositions(positions: EnginePositionRow[]): FormattedClosedPosition[] {
+  if (!positions || positions.length === 0) return [];
+  return positions.map((pos) => {
+    const entryPrice = toNumber(pos.entry_price);
+    const exitPrice = toNumber(pos.exit_price);
+    const direction = directionMultiplier(pos.side);
+
+    const pnlPct =
+      entryPrice !== null && exitPrice !== null
+        ? Number((((exitPrice - entryPrice) / entryPrice) * 100 * direction).toFixed(2))
+        : null;
+
+    return {
+      id: pos.id,
+      ticker: pos.ticker,
+      side: pos.side,
+      qty: toNumber(pos.qty),
+      entry_price: entryPrice,
+      entry_time: pos.opened_at,
+      exit_price: exitPrice,
+      exit_time: pos.closed_at,
+      realized_pnl: toNumber(pos.realized_pnl),
+      realized_r: toNumber(pos.realized_r),
+      pnl_pct: pnlPct,
+      exit_reason: pos.exit_reason,
+      be_activated_at: pos.be_activated_at,
+      breakeven_active: Boolean(pos.be_activated_at),
+      partial_taken: Boolean(pos.partial_taken),
+      trail_active: Boolean(pos.trail_active),
+      trail_stop_price: toNumber(pos.trail_stop_price),
+      trail_peak_pnl: toNumber(pos.trail_peak_pnl),
+    };
+  });
 }
 
 export async function GET() {
@@ -81,7 +306,7 @@ export async function GET() {
       }
     }
 
-    const { portfolio, trades, openPositions } = data;
+    const { portfolio, trades, openPositions, closedPositions } = data;
 
     const closedTrades = (trades || []).filter((t) => t.closed_at);
     const winCount = closedTrades.filter((t) => Number(t.realized_pnl ?? 0) > 0).length;
@@ -127,11 +352,16 @@ export async function GET() {
       status: t.closed_at ? 'CLOSED' : 'OPEN',
     }));
 
+    const formattedOpenPositions = await enrichOpenPositions(openPositions as EnginePositionRow[]);
+    const formattedClosedPositions = formatClosedPositions(closedPositions as EnginePositionRow[]);
+
     return NextResponse.json(
       {
         status: 'ok',
         metrics,
         trades: formattedTrades,
+        open_positions: formattedOpenPositions,
+        recent_closed_positions: formattedClosedPositions,
       },
       { status: 200 },
     );
