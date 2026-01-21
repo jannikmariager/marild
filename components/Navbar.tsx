@@ -20,15 +20,18 @@ import { LogOut, LayoutDashboard, ChevronDown } from 'lucide-react'
 
 export function Navbar() {
   const [user, setUser] = useState<User | null>(null)
+  const [webappUrl, setWebappUrl] = useState<string>(process.env.NEXT_PUBLIC_WEBAPP_URL || '')
   const [menuReady, setMenuReady] = useState(false)
   const supabaseEnabled = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
   const supabase = supabaseEnabled ? createSupabaseBrowserClient() : null
   const { startDashboardTransition } = useDashboardTransition()
   const router = useRouter()
   const pathname = usePathname()
-  const webappUrl = process.env.NEXT_PUBLIC_WEBAPP_URL || 'http://localhost:3000'
 
   useEffect(() => {
+    if (!webappUrl && typeof window !== 'undefined') {
+      setWebappUrl(window.location.origin)
+    }
     if (!supabase) {
       queueMicrotask(() => setMenuReady(true))
       return
@@ -49,7 +52,7 @@ export function Navbar() {
     setMenuReady(true)
 
     return () => subscription.unsubscribe()
-  }, [supabase])
+  }, [supabase, webappUrl])
 
   const handleSignOut = async () => {
     if (!supabase) return
@@ -57,10 +60,18 @@ export function Navbar() {
     window.location.href = '/'
   }
 
+  const dashboardDestination = (path: string) => {
+    if (webappUrl) {
+      const base = webappUrl.endsWith('/') ? webappUrl.slice(0, -1) : webappUrl
+      return `${base}${path}`
+    }
+    return path
+  }
+
   const handleDashboardClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault()
     startDashboardTransition()
-    window.location.href = `${webappUrl}/dashboard`
+    window.location.href = dashboardDestination('/dashboard')
   }
 
   return (
@@ -145,7 +156,7 @@ export function Navbar() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => {
-                    window.location.href = `${webappUrl}/dashboard`
+                    window.location.href = dashboardDestination('/dashboard')
                   }}
                   className="cursor-pointer"
                 >
