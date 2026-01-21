@@ -65,6 +65,24 @@ export function TradePlanCard({ signal }: TradePlanCardProps) {
               {getDirectionIcon(signal?.signal_type)}
               <span className="ml-1">{direction}</span>
             </Badge>
+            {signal?.volatility_state && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  'text-xs px-2.5 py-1 border-dashed',
+                  signal.volatility_state === 'HIGH' && 'bg-amber-50 text-amber-800 border-amber-300',
+                  signal.volatility_state === 'EXTREME' && 'bg-red-50 text-red-700 border-red-300',
+                  signal.volatility_state === 'LOW' && 'bg-sky-50 text-sky-700 border-sky-300',
+                  signal.volatility_state === 'NORMAL' && 'bg-slate-50 text-slate-700 border-slate-200'
+                )}
+                title={(signal.volatility_explanation as string) ?? 'Volatility shows how much price is moving. Signal shows directional edge.'}
+              >
+                VOL · {signal.volatility_state}
+                {typeof signal.volatility_percentile === 'number' && (
+                  <span className="ml-1 font-mono">P{signal.volatility_percentile}</span>
+                )}
+              </Badge>
+            )}
 
             {/* Confidence */}
             <div

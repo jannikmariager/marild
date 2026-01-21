@@ -25,6 +25,10 @@ interface Signal {
   status?: 'active' | 'expired' | 'tp_hit' | 'sl_hit' | 'timed_out';
   performance_trade_id?: string;
   performance_traded?: boolean;
+  performance_trade_status?: string | null;
+  trade_gate_allowed?: boolean;
+  trade_gate_reason?: string | null;
+  blocked_until_et?: string | null;
   // Discord delivery tracking
   discord_sent_at?: string | null;
   discord_channel?: string | null;
@@ -33,12 +37,16 @@ interface Signal {
   discord_skip_reason?: string | null;
   discord_error?: string | null;
   freshnessMinutes?: number;
+  volatility_state?: 'LOW' | 'NORMAL' | 'HIGH' | 'EXTREME';
+  volatility_percentile?: number | null;
+  volatility_explanation?: string | null;
 }
 
 type SortKey = 'updated_at' | 'confidence_score' | 'correction_risk' | 'symbol' | 'timeframe';
 
 type SortDir = 'asc' | 'desc';
 const VISIBLE_SIGNAL_STATES = ['app_only', 'app_discord', 'app_discord_push'] as const;
+const VISIBLE_SIGNAL_STATUSES = ['active', 'watchlist', 'filled', 'tp_hit', 'sl_hit', 'timed_out'] as const;
 
 export function SignalsTable() {
   const { filters } = useSignalsStore();
@@ -55,6 +63,19 @@ export function SignalsTable() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [isCollapsed, setIsCollapsed] = useState(true);
   const HISTORY_WINDOW_HOURS = 72;
+  const MAX_FETCH = 500;
+
+  const dedupeSignals = useCallback((list: Signal[]) => {
+    const seen = new Set<string>();
+    const deduped: Signal[] = [];
+    for (const signal of list) {
+      const key = `${signal.symbol}-${signal.timeframe}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(signal);
+    }
+    return deduped;
+  }, []);
 
   // Auto-expand when symbol filter is applied
   useEffect(() => {
@@ -70,22 +91,15 @@ export function SignalsTable() {
     // Base timeframe: only load signals from the last 72 hours
     const historyWindowStart = new Date(Date.now() - HISTORY_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
 
-    // Get total count for pagination (within the 72h window)
-    let countQuery = supabase
-      .from('ai_signals')
-      .select('*', { count: 'exact', head: true })
-      .gte('updated_at', historyWindowStart);
-
-    // Build main query with pagination
     let query = supabase
       .from('ai_signals')
       .select('*')
       .gte('updated_at', historyWindowStart)
-      .range((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage - 1);
+      .in('status', VISIBLE_SIGNAL_STATUSES)
+      .limit(MAX_FETCH);
 
     const visibilityFilter = `visibility_state.in.(${VISIBLE_SIGNAL_STATES.join(',')})`;
     query = query.or(`visibility_state.is.null,${visibilityFilter}`);
-    countQuery = countQuery.or(`visibility_state.is.null,${visibilityFilter}`);
 
     // Apply sort
     const applySort = (q: any): any => {
@@ -120,41 +134,30 @@ export function SignalsTable() {
 
     query = applySort(query);
 
-    // Apply filters to both queries
+    // Apply filters to main query
     if (filters.symbol) {
       query = query.eq('symbol', filters.symbol);
-      countQuery = countQuery.eq('symbol', filters.symbol);
     }
     if (filters.signalType) {
       query = query.eq('signal_type', filters.signalType);
-      countQuery = countQuery.eq('signal_type', filters.signalType);
     }
     // Timeframe filter removed from UI; keep backend query unfiltered by timeframe.
     if (filters.freshOnly !== undefined) {
       const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
       if (filters.freshOnly) {
         query = query.gte('updated_at', fourHoursAgo);
-        countQuery = countQuery.gte('updated_at', fourHoursAgo);
       } else {
         query = query.lt('updated_at', fourHoursAgo);
-        countQuery = countQuery.lt('updated_at', fourHoursAgo);
       }
     }
     if (filters.source) {
       query = query.eq('source', filters.source);
-      countQuery = countQuery.eq('source', filters.source);
     }
     if (filters.onlyTradedByAi) {
       // Filter to signals that have an actual linked model-portfolio trade.
       query = query.not('performance_trade_id', 'is', null);
-      countQuery = countQuery.not('performance_trade_id', 'is', null);
     }
-
-    // Execute both queries
-    const [{ data, error }, { count }] = await Promise.all([
-      query,
-      countQuery
-    ]);
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching signals:', error);
@@ -164,20 +167,27 @@ export function SignalsTable() {
         ...signal,
         freshnessMinutes: (now - new Date(signal.updated_at).getTime()) / 60000,
       }));
-      setSignals(normalized);
-      setTotalCount(count || 0);
+      const deduped = dedupeSignals(normalized);
+      setSignals(deduped);
+      setTotalCount(deduped.length);
     }
 
     setLoading(false);
-  }, [filters, currentPage, itemsPerPage]);
+  }, [dedupeSignals, filters, sortBy, sortDir]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters]);
+  }, [filters, sortBy, sortDir]);
 
   useEffect(() => {
     fetchSignals();
   }, [fetchSignals]);
+  useEffect(() => {
+    const computedTotalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
+    if (currentPage > computedTotalPages) {
+      setCurrentPage(computedTotalPages);
+    }
+  }, [currentPage, totalCount, itemsPerPage]);
 
   const fetchArchive = useCallback(async () => {
     if (archiveLoading || (showArchive && archiveSignals.length > 0)) return;
@@ -188,6 +198,7 @@ export function SignalsTable() {
     const { data, error } = await supabase
       .from('ai_signals')
       .select('*')
+      .in('status', VISIBLE_SIGNAL_STATUSES)
       .lt('updated_at', seventyTwoHoursAgo)
       .order('updated_at', { ascending: false })
       .limit(500);
@@ -206,9 +217,12 @@ export function SignalsTable() {
     setArchiveLoading(false);
   }, [archiveLoading, showArchive, archiveSignals.length]);
 
-  const totalPages = Math.ceil(totalCount / itemsPerPage);
-  const startItem = (currentPage - 1) * itemsPerPage + 1;
-  const endItem = Math.min(currentPage * itemsPerPage, totalCount);
+  const totalPages = totalCount === 0 ? 1 : Math.ceil(totalCount / itemsPerPage);
+  const startItemIndex = (currentPage - 1) * itemsPerPage;
+  const endItemIndex = startItemIndex + itemsPerPage;
+  const startItem = totalCount === 0 ? 0 : startItemIndex + 1;
+  const endItem = totalCount === 0 ? 0 : Math.min(endItemIndex, totalCount);
+  const paginatedSignals = signals.slice(startItemIndex, endItemIndex);
 
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) {
@@ -243,6 +257,24 @@ export function SignalsTable() {
       default:
         return <Badge variant="secondary">{getSignalIcon(type)} NEUTRAL</Badge>;
     }
+  };
+  const getVolatilityBadge = (signal: Signal) => {
+    const state = signal.volatility_state ?? 'NORMAL';
+    const percentile = signal.volatility_percentile ?? null;
+    const explanation = signal.volatility_explanation ?? 'Volatility shows how much price is moving. Signal shows directional edge.';
+    let className = 'bg-slate-50 text-slate-700 border-slate-200';
+    if (state === 'LOW') className = 'bg-sky-50 text-sky-700 border-sky-200';
+    if (state === 'HIGH') className = 'bg-amber-100 text-amber-800 border-amber-300';
+    if (state === 'EXTREME') className = 'bg-red-100 text-red-800 border-red-300';
+    return (
+      <Badge
+        variant="outline"
+        className={`${className} text-xs`}
+        title={`${explanation} Volatility shows how much price is moving. Signal shows directional edge.`}
+      >
+        {state}{percentile != null ? ` · P${percentile}` : ''}
+      </Badge>
+    );
   };
 
   const getFreshnessBadge = (freshnessMinutes?: number) => {
@@ -298,6 +330,28 @@ export function SignalsTable() {
       <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
         <User className="w-3 h-3 mr-1" />
         USER SIGNAL
+      </Badge>
+    );
+  };
+  const getPlanStatusBadge = (signal: Signal) => {
+    if (signal.performance_traded) {
+      const tradeStatus = signal.performance_trade_status?.toUpperCase() || 'OPEN';
+      return (
+        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 border-emerald-500/20 text-xs">
+          Traded • {tradeStatus}
+        </Badge>
+      );
+    }
+    if (signal.trade_gate_allowed === false) {
+      return (
+        <Badge variant="outline" className="bg-amber-500/10 text-amber-800 border-amber-500/20 text-xs">
+          Gate {signal.trade_gate_reason || 'Hold'}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-xs">
+        Queued
       </Badge>
     );
   };
@@ -429,6 +483,9 @@ export function SignalsTable() {
                     Timeframe
                   </th>
                   <th className="pb-3 font-medium">Signal</th>
+                  <th className="pb-3 font-medium" title="Volatility shows how much price is moving. Signal shows directional edge.">
+                    Volatility
+                  </th>
                   <th
                     className="pb-3 font-medium cursor-pointer select-none"
                     onClick={() => toggleSort('confidence_score')}
@@ -449,18 +506,20 @@ export function SignalsTable() {
                     Updated
                   </th>
                   <th className="pb-3 font-medium">Source</th>
+                  <th className="pb-3 font-medium">Plan</th>
                   <th className="pb-3 font-medium">Discord</th>
                   <th className="pb-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
-                {signals.map((signal) => (
+                {paginatedSignals.map((signal) => (
                   <tr key={signal.id} className="border-b last:border-0">
                     <td className="py-4">
                       <span className="text-[13px] font-bold text-foreground">{signal.symbol}</span>
                     </td>
                     <td className="py-4 text-sm">{signal.timeframe}</td>
                     <td className="py-4">{getSignalBadge(signal.signal_type)}</td>
+                    <td className="py-4">{getVolatilityBadge(signal)}</td>
                     <td className="py-4 text-sm">{signal.confidence_score}%</td>
                     <td className="py-4 text-sm">{signal.correction_risk}%</td>
                     <td className="py-4">{getFreshnessBadge(signal.freshnessMinutes)}</td>
@@ -473,6 +532,7 @@ export function SignalsTable() {
                     <td className="py-4 text-sm">
                       {getSourceBadge(signal)}
                     </td>
+                    <td className="py-4">{getPlanStatusBadge(signal)}</td>
                     <td className="py-4">{getDiscordBadge(signal)}</td>
                     <td className="py-4">
                       <Button

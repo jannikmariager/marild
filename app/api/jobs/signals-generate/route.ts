@@ -6,6 +6,7 @@ import { aggregateBars } from '@/lib/data/aggregation'
 import type { MinuteBar } from '@/lib/data/alpaca'
 import { JobLogger } from '@/lib/jobs/jobLogger'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { evaluateVolatility, VOLATILITY_MINUTE_LOOKBACK_HOURS } from '@/lib/engine/volatility'
 
 interface MinuteBarRow {
   ts: string
@@ -67,11 +68,17 @@ async function handle(request: NextRequest) {
   const freshnessLimit = marketClock.maxDataStalenessMinutes()
 
   for (const symbol of symbols) {
+    const volatilityWindowStart = window1h.end.minus({ hours: VOLATILITY_MINUTE_LOOKBACK_HOURS })
+    const minuteWindowStart =
+      window4h.start.toMillis() < volatilityWindowStart.toMillis()
+        ? window4h.start
+        : volatilityWindowStart
+
     const { data: barsRows, error: barsError } = await supabaseAdmin
       .from('bars_1m')
       .select('ts, open, high, low, close, volume')
       .eq('symbol', symbol)
-      .gte('ts', window4h.start.toISO())
+      .gte('ts', minuteWindowStart.toISO())
       .order('ts', { ascending: true })
 
     if (barsError) {
@@ -147,8 +154,16 @@ async function handle(request: NextRequest) {
       .update({ status: 'invalidated', updated_at: new Date().toISOString() })
       .eq('symbol', symbol)
       .eq('timeframe', '1h')
-      .eq('status', 'active')
+      .in('status', ['active', 'watchlist'])
       .neq('signal_bar_ts', window1h.end.toISO())
+
+    const volatility = await evaluateVolatility({
+      symbol,
+      timeframe: '1h',
+      minuteBars,
+      latestWindowEnd: window1h.end,
+      supabase: supabaseAdmin,
+    })
 
     const insertPayload = {
       symbol,
@@ -173,6 +188,10 @@ async function handle(request: NextRequest) {
       engine_type: 'SWING',
       engine_key: 'SWING',
       engine_style: 'Trend',
+      volatility_state: volatility.state,
+      volatility_percentile: volatility.percentile,
+      volatility_explanation: volatility.explanation,
+      volatility_atr: volatility.atr,
     }
 
     const { error: upsertError } = await supabaseAdmin

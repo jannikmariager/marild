@@ -23,6 +23,10 @@
       "answer": "Yes. If market conditions improve, a signal can upgrade itself with higher confidence and be highlighted more widely."
     },
     {
+      "question": "Does high volatility automatically mean a trade?",
+      "answer": "No. Volatility simply tells you how much price is moving. The AI only issues BUY or SELL signals when the directional structure aligns. It is normal to see NEUTRAL signals during HIGH or EXTREME volatility—those indicate that direction is unclear even though price is active."
+    },
+    {
       "question": "Am I missing trading opportunities?",
       "answer": "No. The AI never stops scanning or trading. This system only controls how signals are shown, not how the AI operates."
     }

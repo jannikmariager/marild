@@ -32,6 +32,10 @@ export interface AISignal {
   signal_type: SignalDirection;
   confidence_score: number;
   correction_risk: number;
+  volatility_state?: 'LOW' | 'NORMAL' | 'HIGH' | 'EXTREME';
+  volatility_percentile?: number | null;
+  volatility_explanation?: string | null;
+  volatility_atr?: number | null;
   reasons?: {
     items: string[];
   };
