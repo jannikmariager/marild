@@ -129,17 +129,21 @@ export function QuickProfitEngine() {
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
+ 
   useEffect(() => {
-    fetchData();
+    // Initial load shows spinner; subsequent auto-refreshes update data
+    // in-place without flipping the whole view into a loading state.
+    fetchData(true);
     // Poll more frequently so admin open-position marks feel "live"
-    const interval = setInterval(fetchData, 10000);
+    const interval = setInterval(() => fetchData(false), 10000);
     return () => clearInterval(interval);
   }, []);
-
-  async function fetchData() {
+ 
+  async function fetchData(showSpinner: boolean) {
     try {
-      setIsLoading(true);
+      if (showSpinner) {
+        setIsLoading(true);
+      }
       setError(null);
       const [metricsRes, paramsRes] = await Promise.all([
         fetch('/api/admin/quick-profit-metrics'),
@@ -154,7 +158,9 @@ export function QuickProfitEngine() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setIsLoading(false);
+      if (showSpinner) {
+        setIsLoading(false);
+      }
     }
   }
 
@@ -249,7 +255,7 @@ export function QuickProfitEngine() {
         <MetricCard label="Entry rate" value={`${params.statistics.entry_rate}%`} />
       </div>
 
-      <OpenPositionsPanel positions={openPositions} onRefresh={fetchData} />
+          <OpenPositionsPanel positions={openPositions} onRefresh={() => fetchData(false)} />
 
       <ClosedPositionsPanel positions={closedPositions} />
       {params.recent_decisions?.length > 0 && (
