@@ -1,8 +1,9 @@
 import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
+import { buildDailySeries, type EquitySnapshotRow } from '@/lib/performance/dailySeries';
 import { computePortfolioMetrics, type ClosedTrade, INITIAL_EQUITY } from '@/lib/performance/metrics';
-import { calculateTradingDays } from '@/lib/performance/tradingDays';
 import { calculateExposureAndRisk } from '@/lib/performance/riskSummary';
+import { calculateTradingDays } from '@/lib/performance/tradingDays';
 import { createClient as createServerClient } from '@/lib/supabaseServer';
 import { hasProAccess } from '@/lib/subscription/devOverride';
 
@@ -22,6 +23,7 @@ function normalizeToActiveStrategy(raw?: string | null): 'DAYTRADE' | 'SWING' {
 }
 
 export async function GET(request: NextRequest) {
+  const now = new Date();
   try {
     const authClient = await createServerClient();
     const {
@@ -53,14 +55,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const { data: portfolioSnapshots, error: portfolioSnapshotsError } = await supabase
+      .from('live_portfolio_state')
+      .select('equity_dollars, timestamp, ts')
+      .eq('strategy', strategy)
+      .order('timestamp', { ascending: true });
+
+    if (portfolioSnapshotsError) {
+      console.error('Error fetching live_portfolio_state snapshots:', portfolioSnapshotsError);
+    }
+
     // 1. Build equity curve from live_trades for real-time updates
     // Get ALL closed trades to build cumulative equity curve
     const { data: allClosedTrades, error: equityError } = await supabase
       .from('live_trades')
-      .select('entry_price, exit_price, realized_pnl_dollars, notional_at_entry, size_shares, exit_timestamp')
+      .select(
+        'entry_price, exit_price, realized_pnl_dollars, notional_at_entry, size_shares, exit_timestamp, realized_pnl_date',
+      )
       .eq('strategy', strategy)
       .not('exit_timestamp', 'is', null)
-      .order('exit_timestamp', { ascending: true});
+      .order('exit_timestamp', { ascending: true });
 
     if (equityError) {
       console.error('Error fetching trades for equity curve:', equityError);
@@ -89,8 +103,8 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Get closed trades (today)
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayKey = now.toISOString().slice(0, 10);
+    const todayStart = new Date(`${todayKey}T00:00:00.000Z`);
 
     const { data: todayTrades, error: tradesError } = await supabase
       .from('live_trades')
@@ -105,8 +119,9 @@ export async function GET(request: NextRequest) {
     }
 
     // 4. Get all closed trades (last 30 days for stats)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
+    thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
 
     const { data: allTrades, error: allTradesError } = await supabase
       .from('live_trades')
@@ -149,56 +164,55 @@ export async function GET(request: NextRequest) {
     const initialEquity = INITIAL_EQUITY;
 
     // Today's stats
-    const todayPnl = todayTrades?.reduce((sum, t) => sum + t.realized_pnl_dollars, 0) || 0;
-    const todayTrades_count = todayTrades?.length || 0;
+    const todayPnl = (allClosedTrades || []).reduce((sum, t) => {
+      const day = t.realized_pnl_date ?? (t.exit_timestamp ? t.exit_timestamp.slice(0, 10) : null);
+      if (day === todayKey) {
+        return sum + (t.realized_pnl_dollars || 0);
+      }
+      return sum;
+    }, 0);
+    const todayTrades_count = (allClosedTrades || []).filter((t) => {
+      const day = t.realized_pnl_date ?? (t.exit_timestamp ? t.exit_timestamp.slice(0, 10) : null);
+      return day === todayKey;
+    }).length;
 
     // Build equity curve from cumulative realized P&L
     const starting_equity = INITIAL_EQUITY;
-    const equityCurvePoints: Array<{
-      timestamp: string;
-      equity: number;
-      cash: number;
-      unrealized_pnl: number;
-      open_positions_count: number;
-    }> = [];
-    
-    let cumulativeRealizedPnl = 0;
-    
-    // Add starting point
-    if (allClosedTrades && allClosedTrades.length > 0) {
-      const firstTradeDate = new Date(allClosedTrades[0].exit_timestamp);
-      firstTradeDate.setHours(0, 0, 0, 0);
-      equityCurvePoints.push({
-        timestamp: firstTradeDate.toISOString(),
-        equity: starting_equity,
-        cash: starting_equity,
-        unrealized_pnl: 0,
-        open_positions_count: 0,
-      });
+    const firstTradeDateIso = allClosedTrades?.[0]?.realized_pnl_date ?? allClosedTrades?.[0]?.exit_timestamp;
+    const dailySeriesStart = firstTradeDateIso ? new Date(firstTradeDateIso) : new Date(now.getTime() - 120 * 24 * 60 * 60 * 1000);
+    dailySeriesStart.setUTCHours(0, 0, 0, 0);
+
+    const { order: equityDayOrder, map: equityDayMap } = buildDailySeries({
+      startDate: dailySeriesStart,
+      endDate: new Date(now),
+      startingEquity: starting_equity,
+      trades: (allClosedTrades || []).map((t) => ({
+        realized_pnl_date: t.realized_pnl_date ?? (t.exit_timestamp ? t.exit_timestamp.slice(0, 10) : null),
+        realized_pnl_dollars: t.realized_pnl_dollars ?? 0,
+      })),
+      snapshots: (portfolioSnapshots as EquitySnapshotRow[]) || [],
+    });
+
+    const lastEquityKey = equityDayOrder[equityDayOrder.length - 1];
+    if (lastEquityKey) {
+      const latest = equityDayMap.get(lastEquityKey);
+      if (latest) {
+        latest.unrealized = unrealizedPnlDollars;
+        latest.equity = starting_equity + latest.cumulativeRealized + latest.unrealized;
+        equityDayMap.set(lastEquityKey, latest);
+      }
     }
-    
-    // Add point for each closed trade
-    for (const trade of allClosedTrades || []) {
-      cumulativeRealizedPnl += (trade.realized_pnl_dollars || 0);
-      equityCurvePoints.push({
-        timestamp: trade.exit_timestamp,
-        equity: starting_equity + cumulativeRealizedPnl,
-        cash: starting_equity + cumulativeRealizedPnl - unrealizedPnlDollars,
-        unrealized_pnl: unrealizedPnlDollars,
-        open_positions_count: openPositions?.length || 0,
-      });
-    }
-    
-    // Add current point with unrealized P&L
-    if (equityCurvePoints.length > 0) {
-      equityCurvePoints.push({
-        timestamp: new Date().toISOString(),
-        equity: starting_equity + cumulativeRealizedPnl + unrealizedPnlDollars,
-        cash: starting_equity + cumulativeRealizedPnl,
-        unrealized_pnl: unrealizedPnlDollars,
-        open_positions_count: openPositions?.length || 0,
-      });
-    }
+
+    const equityCurvePoints = equityDayOrder.map((key) => {
+      const daily = equityDayMap.get(key)!;
+      return {
+        timestamp: `${key}T21:00:00Z`,
+        equity: daily.equity,
+        cash: daily.equity - daily.unrealized,
+        unrealized_pnl: daily.unrealized,
+        open_positions_count: key === lastEquityKey ? (openPositions?.length || 0) : 0,
+      };
+    });
 
     // Calculate trading days from equity curve points
     const { tradingDays, periodStart, periodEnd } = calculateTradingDays(
@@ -210,9 +224,6 @@ export async function GET(request: NextRequest) {
     );
 
     // Latest equity state from the curve
-    const currentEquity = equityCurvePoints.length > 0 
-      ? equityCurvePoints[equityCurvePoints.length - 1].equity 
-      : initialEquity;
     const cashAvailable = equityCurvePoints.length > 0
       ? equityCurvePoints[equityCurvePoints.length - 1].cash
       : initialEquity;

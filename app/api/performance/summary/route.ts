@@ -1,6 +1,8 @@
-import { createClient } from '@/lib/supabaseServer';
 import { NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabaseServer';
 import { hasProAccess } from '@/lib/subscription/devOverride';
+import { buildDailySeries, type EquitySnapshotRow } from '@/lib/performance/dailySeries';
+import { INITIAL_EQUITY } from '@/lib/performance/metrics';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,9 +61,10 @@ export async function GET(request: Request) {
     // 1) Fetch all closed trades for LIVE SWING engine (realized P&L since inception)
     const { data: allTrades, error: tradesError } = await supabase
       .from('live_trades')
-      .select('realized_pnl_dollars, exit_timestamp, exit_price, entry_price, exit_reason, side')
+      .select('realized_pnl_dollars, realized_pnl_date, exit_timestamp, exit_price, entry_price, exit_reason, side')
       .eq('strategy', 'SWING')
       .eq('engine_key', 'SWING')
+      .order('realized_pnl_date', { ascending: true, nullsFirst: false })
       .order('exit_timestamp', { ascending: true });
 
     if (tradesError) {
@@ -87,22 +90,72 @@ export async function GET(request: Request) {
       );
     }
 
-    const starting_equity = 100000; // Single $100K Active Signals portfolio
+    const starting_equity = INITIAL_EQUITY; // Single $100K Active Signals portfolio
+    const now = new Date();
+    const firstTradeIso = allTrades?.[0]?.realized_pnl_date ?? allTrades?.[0]?.exit_timestamp;
+    const startDate = firstTradeIso ? new Date(firstTradeIso) : new Date(now.getTime() - 120 * 24 * 60 * 60 * 1000);
+    startDate.setUTCHours(0, 0, 0, 0);
+    const endDate = new Date(now);
+    endDate.setUTCHours(23, 59, 59, 999);
 
-    // Realized P&L from all closed trades (LIVE engine only)
-    const realizedPnl = (allTrades || []).reduce(
-      (sum, t) => sum + (t.realized_pnl_dollars || 0),
-      0
-    );
+    const { data: portfolioSnapshots, error: snapshotsError } = await supabase
+      .from('live_portfolio_state')
+      .select('equity_dollars, timestamp, ts')
+      .eq('strategy', 'SWING')
+      .order('timestamp', { ascending: true });
 
-    // Unrealized P&L from open positions (LIVE engine only)
-    const unrealizedPnl = (openPositions || []).reduce(
+    if (snapshotsError) {
+      console.error('[performance/summary] Error fetching portfolio snapshots:', snapshotsError);
+    }
+
+    const unrealizedFromPositions = (openPositions || []).reduce(
       (sum, p) => sum + (p.unrealized_pnl_dollars || 0),
-      0
+      0,
     );
 
-    // Current equity is starting equity + realized + unrealized
-    const current_equity = starting_equity + realizedPnl + unrealizedPnl;
+    const { order: dayOrder, map: dailyMap } = buildDailySeries({
+      startDate,
+      endDate,
+      startingEquity: starting_equity,
+      trades: (allTrades || []).map((t) => ({
+        realized_pnl_date: t.realized_pnl_date ?? (t.exit_timestamp ? t.exit_timestamp.slice(0, 10) : null),
+        realized_pnl_dollars: t.realized_pnl_dollars ?? 0,
+      })),
+      snapshots: (portfolioSnapshots as EquitySnapshotRow[]) || [],
+    });
+
+    const latestKey = dayOrder[dayOrder.length - 1];
+    if (latestKey) {
+      const latest = dailyMap.get(latestKey);
+      if (latest) {
+        latest.unrealized = unrealizedFromPositions;
+        latest.equity = starting_equity + latest.cumulativeRealized + latest.unrealized;
+        dailyMap.set(latestKey, latest);
+      }
+    }
+
+    const equity_curve = dayOrder.map((key) => {
+      const daily = dailyMap.get(key)!;
+      return {
+        date: `${key}T21:00:00Z`,
+        equity: daily.equity,
+      };
+    });
+
+    let peak = starting_equity;
+    let max_drawdown_pct = 0;
+    for (const point of equity_curve) {
+      if (point.equity > peak) {
+        peak = point.equity;
+      }
+      const drawdown = ((peak - point.equity) / peak) * 100;
+      if (drawdown > max_drawdown_pct) {
+        max_drawdown_pct = drawdown;
+      }
+    }
+
+    const latestDaily = latestKey ? dailyMap.get(latestKey) : null;
+    const current_equity = latestDaily?.equity ?? starting_equity;
     const total_return_pct = ((current_equity - starting_equity) / starting_equity) * 100;
 
     // Calculate trade statistics
@@ -132,54 +185,6 @@ export async function GET(request: Request) {
       }
     }
 
-    // Build equity curve from ALL closed trades (cumulative realized P&L over time)
-    // This makes the curve ALWAYS match totals and updates instantly when trades close
-    const equity_curve: Array<{ date: string; equity: number }> = [];
-    let cumulativeRealizedPnl = 0;
-    let max_drawdown_pct = 0;
-    let peak = starting_equity;
-
-    // Add starting point
-    if (allTrades && allTrades.length > 0) {
-      const firstTradeDate = new Date(allTrades[0].exit_timestamp);
-      firstTradeDate.setHours(0, 0, 0, 0); // Start of first trading day
-      equity_curve.push({ 
-        date: firstTradeDate.toISOString(), 
-        equity: starting_equity 
-      });
-    }
-
-    // Add point for each closed trade (cumulative equity) and track max drawdown
-    for (const trade of allTrades || []) {
-      const exitDate = trade.exit_timestamp;
-      if (!exitDate) continue;
-
-      cumulativeRealizedPnl += trade.realized_pnl_dollars || 0;
-      const equity = starting_equity + cumulativeRealizedPnl;
-
-      equity_curve.push({
-        date: exitDate,
-        equity,
-      });
-
-      // Track max drawdown
-      if (equity > peak) peak = equity;
-      const drawdown = ((peak - equity) / peak) * 100;
-      if (drawdown > max_drawdown_pct) max_drawdown_pct = drawdown;
-    }
-
-    // Add current point with unrealized P&L included
-    if (equity_curve.length > 0) {
-      equity_curve.push({ 
-        date: new Date().toISOString(), 
-        equity: current_equity 
-      });
-      
-      // Check drawdown with current equity
-      if (current_equity > peak) peak = current_equity;
-      const currentDrawdown = ((peak - current_equity) / peak) * 100;
-      if (currentDrawdown > max_drawdown_pct) max_drawdown_pct = currentDrawdown;
-    }
 
     return NextResponse.json({
       starting_equity,

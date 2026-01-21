@@ -74,3 +74,23 @@ npm run dev
 ### Deploying jobs
 
 Use your scheduler of choice (Supabase cron, Vercel cron, or any orchestrator) to POST the three endpoints above with `Authorization: Bearer $JOB_CRON_SECRET` on the cadence described. Delete the legacy schedules once the new pipeline is verified.
+
+### Portfolio performance & P&L attribution
+
+1. Apply migration `supabase/migrations/20260121133000_live_trades_realized_date.sql`. This creates `realized_pnl_date`, backfills it from `exit_timestamp`, and adds guardrails so realized P&L can only be written when a trade is actually closed.
+2. If the migration cannot be replayed (e.g., production DB already has the column), re-run the backfill manually:
+
+   ```sql
+   update public.live_trades
+   set realized_pnl_date = date(exit_timestamp)
+   where exit_timestamp is not null
+     and realized_pnl_dollars is not null
+     and realized_pnl_date is null;
+   ```
+
+3. `live_portfolio_state` snapshots remain the source of mark-to-market equity. The journal (`/api/performance/journal`), summary (`/api/performance/summary`), and live portfolio (`/api/live-portfolio`) APIs now build a daily series by combining:
+   - Realized trades grouped by `realized_pnl_date`.
+   - Equity snapshots for unrealized drift between closes.
+   - Current open-position unrealized P&L applied to the latest day only.
+4. Never set `realized_pnl_dollars` or `realized_pnl_date` directly in application code. Book realized values by writing `exit_timestamp`, `exit_price`, and `realized_pnl_dollars`; the trigger keeps the date in sync.
+5. When auditing discrepancies, first verify that `live_portfolio_state` contains the latest `equity_dollars` rows. Stale snapshots will manifest as flat unrealized curves even if trades are correct.
