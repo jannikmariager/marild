@@ -61,14 +61,39 @@ async function handle(request: NextRequest) {
   const failures: Array<{ id: string; error: string }> = []
 
   for (const signal of (signals as ActiveSignal[]) || []) {
-    const size = positionSize(signal.entry_price)
+    // Prefer a live 1m mark from bars_1m so execution reflects the
+    // most recent price, while still falling back to the signal's
+    // theoretical entry if needed.
+    let effectiveEntry = signal.entry_price ?? 0
+
+    try {
+      const { data: latestBar, error: latestError } = await supabaseAdmin
+        .from('bars_1m')
+        .select('close')
+        .eq('symbol', signal.symbol)
+        .order('ts', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!latestError && latestBar && latestBar.close != null) {
+        const livePrice = Number(latestBar.close)
+        if (Number.isFinite(livePrice) && livePrice > 0) {
+          effectiveEntry = livePrice
+        }
+      }
+    } catch {
+      // If anything goes wrong reading bars_1m, we simply fall back
+      // to the signal's entry_price to avoid blocking execution.
+    }
+
+    const size = positionSize(effectiveEntry)
     if (size === 0) {
       failures.push({ id: signal.id, error: 'invalid_entry_price' })
       continue
     }
 
     const side = signal.signal_type?.toLowerCase().includes('sell') ? 'SHORT' : 'LONG'
-    const entryPrice = signal.entry_price ?? 0
+    const entryPrice = effectiveEntry
     const notional = entryPrice * size
 
     const { data: tradeRows, error: tradeError } = await supabaseAdmin
