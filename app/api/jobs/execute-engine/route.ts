@@ -61,7 +61,30 @@ async function handle(request: NextRequest) {
   const failures: Array<{ id: string; error: string }> = []
 
   for (const signal of (signals as ActiveSignal[]) || []) {
-    // Prefer a live 1m mark from bars_1m so execution reflects the
+    // 1) Hard guard: never open more than one LIVE trade per ticker
+    // at a time for the SWING engine. This protects track record
+    // from accidental duplicates.
+    try {
+      const { data: openRows, error: openError } = await supabaseAdmin
+        .from('live_trades')
+        .select('id')
+        .eq('strategy', 'SWING')
+        .eq('engine_key', signal.engine_key ?? 'SWING')
+        .eq('ticker', signal.symbol)
+        .is('exit_timestamp', null)
+        .limit(1)
+
+      if (!openError && openRows && openRows.length > 0) {
+        failures.push({ id: signal.id, error: 'duplicate_open_for_ticker' })
+        continue
+      }
+    } catch {
+      // If this guard fails for any reason, we fall back to execution
+      // rather than silently blocking trades; the DB still has its
+      // own open/closed state for safety.
+    }
+
+    // 2) Prefer a live 1m mark from bars_1m so execution reflects the
     // most recent price, while still falling back to the signal's
     // theoretical entry if needed.
     let effectiveEntry = signal.entry_price ?? 0
