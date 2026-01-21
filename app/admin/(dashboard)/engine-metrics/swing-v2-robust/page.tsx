@@ -318,7 +318,7 @@ export default function SwingV2RobustPage() {
               const dayTrades = group.trades;
               const dayWins = dayTrades.filter(t => Number(t.realized_pnl_dollars ?? 0) >= 0).length;
               const dayPnL = dayTrades.reduce((sum, t) => sum + Number(t.realized_pnl_dollars ?? 0), 0);
-              const isExpanded = expandedDays.has(day);
+              const isExpanded = expandedDays.has(group.key);
 
               return (
                 <div key={group.key}>
