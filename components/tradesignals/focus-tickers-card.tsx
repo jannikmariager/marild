@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { createClient } from '@/lib/supabaseBrowser';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,6 +44,7 @@ interface LivePosition {
   size_shares: number;
   side?: 'LONG' | 'SHORT';
 }
+const DISPLAY_SIGNAL_STATUSES = ['active', 'watchlist', 'filled', 'tp_hit', 'sl_hit', 'timed_out'] as const;
 
 type SortKey = 'symbol' | 'confidence';
 
@@ -73,7 +73,7 @@ export function FocusTickersCard() {
         .order('rank', { ascending: true })
         .limit(30);
 
-      let { data, error } = await baseQuery;
+      const { data: baseData, error } = await baseQuery;
 
       if (error) {
         setError(error.message);
@@ -83,7 +83,8 @@ export function FocusTickersCard() {
       }
 
       // If no rows for today (e.g., pre-market not run yet), show the most recent set
-      if (!data || data.length === 0) {
+      let data = baseData || [];
+      if (data.length === 0) {
         const fallback = await supabase
           .from('daily_focus_tickers')
           .select('*')
@@ -111,6 +112,7 @@ export function FocusTickersCard() {
             .from('ai_signals')
             .select('symbol, signal_type, entry_price, stop_loss, take_profit_1, take_profit_2, reasoning, created_at, correction_risk, timeframe, confidence_score')
             .in('symbol', symbols)
+            .in('status', DISPLAY_SIGNAL_STATUSES)
             .order('created_at', { ascending: false }),
           supabase
             .from('live_positions')

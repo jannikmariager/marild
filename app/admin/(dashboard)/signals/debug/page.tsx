@@ -125,9 +125,9 @@ export default async function SignalDebugPage() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">
-            {/* Today's Activity */}
+            {/* Today’s Activity */}
             <div className="space-y-3 p-4 rounded-lg border border-border bg-card">
-              <div className="text-sm font-medium text-muted-foreground">Today's Generation</div>
+              <div className="text-sm font-medium text-muted-foreground">Today&rsquo;s Generation</div>
               
               <div className="flex items-baseline gap-2">
                 <div className="text-4xl font-bold text-foreground">{summary.signals_today || 0}</div>

@@ -44,7 +44,7 @@ function decisionBadge(decision: string | null) {
 
 export default async function LiveDecisionsPage() {
   const supabase = await createAdminClient();
-
+  // eslint-disable-next-line react-hooks/purity
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   // Join latest decision per signal with the signal itself
@@ -84,7 +84,7 @@ export default async function LiveDecisionsPage() {
         <CardHeader>
           <CardTitle>Decisions (last 24h)</CardTitle>
           <CardDescription>
-            Sorted by newest first. This is the ground truth for "why was this signal traded or not?".
+            Sorted by newest first. This is the ground truth for &ldquo;why was this signal traded or not?&rdquo;.
           </CardDescription>
         </CardHeader>
         <CardContent>

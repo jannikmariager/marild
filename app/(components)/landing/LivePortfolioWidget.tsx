@@ -52,7 +52,7 @@ export function LivePortfolioWidget() {
               : [];
             if (days.length > 0) {
               const lastDay = days[days.length - 1];
-              let pnl = typeof lastDay.total_pnl === "number" ? lastDay.total_pnl : 0;
+              const pnl = typeof lastDay.total_pnl === "number" ? lastDay.total_pnl : 0;
 
               // If we are on a new trading day (NY) but before the regular
               // session opens, neutralize yesterday's P&L so "Today" starts flat.
