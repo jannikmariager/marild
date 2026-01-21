@@ -8,6 +8,12 @@ import { JobLogger } from '@/lib/jobs/jobLogger'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { evaluateVolatility, VOLATILITY_MINUTE_LOOKBACK_HOURS } from '@/lib/engine/volatility'
 
+// Minimum 1h candle body size required to consider a setup, as a fraction of price.
+// Default 0.001 (0.10%) but can be overridden via env if needed.
+// Currently not enforced (see body-size filter below), but kept for future tuning.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const MIN_BODY_PCT = Number(process.env.SIGNALS_MIN_BODY_PCT ?? 0.001)
+
 interface MinuteBarRow {
   ts: string
   open: number
@@ -120,11 +126,14 @@ async function handle(request: NextRequest) {
 
     const body = oneHourBar.close - oneHourBar.open
     const bodyPct = Math.abs(body) / oneHourBar.open
-    if (bodyPct < 0.0025) {
-      noSetup += 1
-      noSetupSymbols.push(symbol)
-      continue
-    }
+    // TEMP: disable minimum body-size filter so we always emit a signal when
+    // we have a valid 1h/4h bar. Signal quality is still reflected in
+    // confidence (which uses bodyPct) and trend alignment.
+    // if (bodyPct < MIN_BODY_PCT) {
+    //   noSetup += 1
+    //   noSetupSymbols.push(symbol)
+    //   continue
+    // }
 
     const direction = body > 0 ? 'buy' : 'sell'
     const trend = fourHourBar.close - fourHourBar.open

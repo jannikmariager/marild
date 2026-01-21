@@ -60,7 +60,8 @@ export function RiskRewardBar({
   const entryPct = normalize(entry);
   const slPct = normalize(stopLoss);
   const tpPct = normalize(tp1);
-  const currentPct = normalize(currentPrice);
+  const currentPctRaw = normalize(currentPrice);
+  const currentPct = Math.max(0, Math.min(100, currentPctRaw));
 
   // PROFIT LOCKED LOGIC (based on raw prices, not percentages)
   const isProfitLocked = isShort ? stopLoss <= entry : stopLoss >= entry;
@@ -99,6 +100,8 @@ export function RiskRewardBar({
   }
 
   // Determine risk state for badge (exported as utility)
+  // NOTE: currently not rendered in this component, but kept for consumers.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const riskState = getRiskState(stopLoss, entry, isProfitLocked);
 
   return (

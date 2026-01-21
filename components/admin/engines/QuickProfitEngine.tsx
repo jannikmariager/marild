@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { formatNyDateTime } from '@/lib/datetime';
+import { RiskRewardBar } from '@/components/performance/RiskRewardBar';
 
 type QuickProfitMetrics = {
   total_trades: number;
@@ -131,7 +132,8 @@ export function QuickProfitEngine() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    // Poll more frequently so admin open-position marks feel "live"
+    const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -247,7 +249,7 @@ export function QuickProfitEngine() {
         <MetricCard label="Entry rate" value={`${params.statistics.entry_rate}%`} />
       </div>
 
-      <OpenPositionsPanel positions={openPositions} />
+      <OpenPositionsPanel positions={openPositions} onRefresh={fetchData} />
 
       <ClosedPositionsPanel positions={closedPositions} />
       {params.recent_decisions?.length > 0 && (
@@ -417,15 +419,34 @@ function ConfigItem({ label, value }: ConfigItemProps) {
 }
 
 
-function OpenPositionsPanel({ positions }: { positions: QuickProfitOpenPosition[] }) {
+function OpenPositionsPanel({
+  positions,
+  onRefresh,
+}: {
+  positions: QuickProfitOpenPosition[];
+  onRefresh?: () => void;
+}) {
   return (
     <div className="bg-white rounded-lg border border-gray-200">
       <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Open Quick profit positions</h3>
-          <p className="text-xs text-muted-foreground">Live mark-based P/L with breakeven & trailing state</p>
+          <p className="text-xs text-muted-foreground">
+            Live mark-based P/L with breakeven & trailing state • auto-refreshes every 10s
+          </p>
         </div>
-        <span className="text-xs font-medium text-muted-foreground">{positions.length} open</span>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="font-medium">{positions.length} open</span>
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Refresh now
+            </button>
+          )}
+        </div>
       </div>
       {positions.length === 0 ? (
         <EmptyState message="No open positions right now." />
@@ -445,50 +466,94 @@ function OpenPositionsPanel({ positions }: { positions: QuickProfitOpenPosition[
             </thead>
             <tbody>
               {positions.map((pos) => {
-                const pnlClass = pnlColor(pos.pnl_dollars)
+                const pnlClass = pnlColor(pos.pnl_dollars);
+                const sideLabel = (pos.side ?? '').toUpperCase();
+                const isShort = sideLabel === 'SHORT';
+                const activeStop =
+                  pos.trail_active && pos.trail_stop_price !== null && !Number.isNaN(pos.trail_stop_price)
+                    ? pos.trail_stop_price
+                    : pos.stop_loss;
+                const canShowBar =
+                  pos.entry_price !== null &&
+                  pos.mark_price !== null &&
+                  pos.take_profit !== null &&
+                  activeStop !== null &&
+                  !Number.isNaN(pos.entry_price) &&
+                  !Number.isNaN(pos.mark_price) &&
+                  !Number.isNaN(pos.take_profit) &&
+                  !Number.isNaN(activeStop ?? NaN);
+
                 return (
-                  <tr key={pos.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      <div className="font-semibold">{pos.ticker ?? '—'}</div>
-                      <div className="text-[11px] text-muted-foreground capitalize">
-                        {pos.side?.toLowerCase() ?? '—'} - {formatQty(pos.qty)} sh
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="font-mono text-sm">{formatCurrency(pos.entry_price)}</div>
-                      <div className="text-[11px] text-muted-foreground">{formatNyDateTime(pos.entry_time)}</div>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-sm">{formatCurrency(pos.mark_price)}</td>
-                    <td className={`px-3 py-2 text-right font-semibold ${pnlClass}`}>
-                      <div className="font-mono">{formatSignedCurrency(pos.pnl_dollars)}</div>
-                      <div className="text-[11px]">{formatSignedPercent(pos.pnl_pct)}</div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <ManagementBadges
-                        breakevenActive={pos.breakeven_active}
-                        trailActive={pos.trail_active}
-                        partialTaken={pos.partial_taken}
-                        beActivatedAt={pos.be_activated_at}
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-700 space-y-1">
-                      <div>SL {formatCurrency(pos.stop_loss)}</div>
-                      {pos.trail_stop_price !== null && <div>Trail {formatCurrency(pos.trail_stop_price)}</div>}
-                      <div>TP {formatCurrency(pos.take_profit)}</div>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-700 space-y-1">
-                      <div>Risk {formatCurrency(pos.risk_dollars)}</div>
-                      <div className="text-muted-foreground">Notional {formatCurrency(pos.notional_at_entry)}</div>
-                    </td>
-                  </tr>
-                )
+                  <Fragment key={pos.id}>
+                    <tr className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex items-center gap-2">
+                          <div className="font-semibold">{pos.ticker ?? '—'}</div>
+                          {sideLabel && (
+                            <span
+                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${
+                                isShort ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                              }`}
+                            >
+                              {sideLabel}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          Size {formatQty(pos.qty)} sh
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <div className="font-mono text-sm">{formatCurrency(pos.entry_price)}</div>
+                        <div className="text-[11px] text-muted-foreground">{formatNyDateTime(pos.entry_time)}</div>
+                      </td>
+                      <td className="px-3 py-2 font-mono text-sm align-top">{formatCurrency(pos.mark_price)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold align-top ${pnlClass}`}>
+                        <div className="font-mono">{formatSignedCurrency(pos.pnl_dollars)}</div>
+                        <div className="text-[11px]">{formatSignedPercent(pos.pnl_pct)}</div>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <ManagementBadges
+                          breakevenActive={pos.breakeven_active}
+                          trailActive={pos.trail_active}
+                          partialTaken={pos.partial_taken}
+                          beActivatedAt={pos.be_activated_at}
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-xs text-gray-700 space-y-1 align-top">
+                        <div>SL {formatCurrency(pos.stop_loss)}</div>
+                        {pos.trail_stop_price !== null && (
+                          <div>Trail {formatCurrency(pos.trail_stop_price)}</div>
+                        )}
+                        <div>TP {formatCurrency(pos.take_profit)}</div>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-gray-700 space-y-1 align-top">
+                        <div>Risk {formatCurrency(pos.risk_dollars)}</div>
+                        <div className="text-muted-foreground">Notional {formatCurrency(pos.notional_at_entry)}</div>
+                      </td>
+                    </tr>
+                    {canShowBar && (
+                      <tr className="border-b border-gray-100 bg-slate-50/60">
+                        <td colSpan={7} className="px-3 pb-3 pt-1 overflow-hidden">
+                          <RiskRewardBar
+                            signalEntryPrice={pos.entry_price as number}
+                            activeSlPrice={activeStop as number}
+                            tp1Price={pos.take_profit as number}
+                            currentPrice={pos.mark_price as number}
+                            side={isShort ? 'SHORT' : 'LONG'}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
               })}
             </tbody>
           </table>
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function ClosedPositionsPanel({ positions }: { positions: QuickProfitClosedPosition[] }) {

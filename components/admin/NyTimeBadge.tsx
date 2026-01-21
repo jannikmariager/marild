@@ -9,12 +9,14 @@ interface NyTimeBadgeProps {
 }
 
 export function NyTimeBadge({ label = 'Current NY time', refreshMs = 30_000 }: NyTimeBadgeProps) {
-  const [timestamp, setTimestamp] = useState(() => formatNyDateTime(new Date()))
+  // Avoid using Date/formatting during SSR to prevent hydration mismatches.
+  // We start empty, then populate once on the client.
+  const [timestamp, setTimestamp] = useState<string | null>(null)
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setTimestamp(formatNyDateTime(new Date()))
-    }, refreshMs)
+    const update = () => setTimestamp(formatNyDateTime(new Date()))
+    update()
+    const id = setInterval(update, refreshMs)
     return () => clearInterval(id)
   }, [refreshMs])
 
