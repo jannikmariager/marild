@@ -118,7 +118,11 @@ async function handle(request: NextRequest) {
     const oneHourBar = aggregateBars(symbol, 60, window1h, minuteBars)
     const fourHourBar = aggregateBars(symbol, 240, window4h, minuteBars)
 
-    if (!oneHourBar || !fourHourBar) {
+    // Require a valid 1h candle, but do NOT block on 4h. If the 4h
+    // aggregation can't be built (e.g. early in the session before
+    // there is enough data), we still emit a signal and treat the
+    // higher timeframe as neutral.
+    if (!oneHourBar) {
       noSetup += 1
       noSetupSymbols.push(symbol)
       continue
@@ -136,8 +140,14 @@ async function handle(request: NextRequest) {
     // }
 
     const direction = body > 0 ? 'buy' : 'sell'
-    const trend = fourHourBar.close - fourHourBar.open
-    const trendAligned = (direction === 'buy' && trend >= 0) || (direction === 'sell' && trend <= 0)
+
+    let trend = 0
+    let trendAligned = true
+    if (fourHourBar) {
+      trend = fourHourBar.close - fourHourBar.open
+      trendAligned = (direction === 'buy' && trend >= 0) || (direction === 'sell' && trend <= 0)
+    }
+
     const confidence = Math.min(100, Math.round(bodyPct * 10000 + (trendAligned ? 10 : 0)))
 
     const entry = oneHourBar.close
