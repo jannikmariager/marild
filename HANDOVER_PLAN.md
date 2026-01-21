@@ -19,12 +19,15 @@
 7. Git repo created: `github.com/jannikmariager/marild`, Vercel project: `marild-3otgsjhzm-jannik-mariagers-projects`.
 8. Marketing layout now renders dark theme (Navbar + footer restored, cards restyled).
 9. Auth pages now share the dark gradient theme (login/signup match production styling).
+10. Quick Profit shadow engine API/UI revamped: `/api/admin/quick-profit-metrics` now reports open + closed position state with live Alpaca marks, and the admin Quick Profit page renders real-time P/L plus breakeven/trailing badges.
+11. Stripe API routes (`create-portal`, `create-checkout`, `webhook`) now lazily initialize clients so builds no longer fail when secrets are absent during static analysis; TypeScript typing on `engine-metrics` was fixed to unblock production builds.
 
 ## Outstanding Issues / Next Tasks
 1. **Dashboard theme:** still forced dark locally. Now that deploy is green, reapply the light palette (compare with `marild-web-unified`).
 2. **Runtime QA:** click through Vercel deployment (`marild-3otgsjhzm…`) – dashboard, tradesignals, admin routes.
 3. **Admin functionality:** verify engines, revenue, signals, ticker requests, etc. with real data.
 4. **Documentation:** keep updating this handover file; add testing instructions once QA is done.
+5. **Next.js warnings:** rename `middleware.ts` to the new `proxy` convention and resolve the multiple-lockfile/Turbopack root warning once the repo layout is finalized.
 
 ## How to Continue
 1. Run `npm run dev` locally; ensure Supabase env vars exist.
@@ -33,5 +36,5 @@
    - Missing module? Copy from legacy repos: `tradelens_ai/frontend`, `admin-dashboard`.
 3. After each fix: `git add …`, commit with summary, push → Vercel redeploys.
 4. Track progress here; note remaining TODOs for the next engineer.
-
+_Last updated: 2026-01-21 @ 09:35 UTC by Warp (Quick Profit UI + Stripe build fixes landed, build green)._
 _Last updated: 2026-01-14 @ 08:35 UTC by Warp (build succeeded on Vercel)._
