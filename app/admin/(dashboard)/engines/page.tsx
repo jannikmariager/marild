@@ -1,5 +1,5 @@
 import { EngineEvolutionDashboard } from '@/components/admin/engines/EngineEvolutionDashboard';
-import { ShadowScalpEngine } from '@/components/admin/engines/ShadowScalpEngine';
+import { QuickProfitEngine } from '@/components/admin/engines/QuickProfitEngine';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fetchAllVariantResults, fetchVariantAggregate } from '@/lib/server/engineVariantQueries';
@@ -43,7 +43,7 @@ export default async function EnginesDashboardPage({ searchParams }: PageProps) 
             <TabsTrigger value="variants">Filter variants (V7.x)</TabsTrigger>
             <TabsTrigger value="universe">Ticker universe</TabsTrigger>
             <TabsTrigger value="settings">Engine settings</TabsTrigger>
-            <TabsTrigger value="scalp">Shadow Scalp Engine</TabsTrigger>
+            <TabsTrigger value="quick-profit">Quick Profit Engine</TabsTrigger>
           </TabsList>
           <TabsContent value="versions" className="space-y-4">
             <EngineEvolutionDashboard />
@@ -58,8 +58,8 @@ export default async function EnginesDashboardPage({ searchParams }: PageProps) 
           <TabsContent value="settings" className="space-y-4">
             <EngineSettingsClient flags={flags} />
           </TabsContent>
-          <TabsContent value="scalp" className="space-y-4">
-            <ShadowScalpEngine />
+          <TabsContent value="quick-profit" className="space-y-4">
+            <QuickProfitEngine />
           </TabsContent>
         </Tabs>
       </div>

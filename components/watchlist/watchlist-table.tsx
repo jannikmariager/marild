@@ -18,6 +18,8 @@ interface WatchlistItem {
   };
 }
 
+const DISPLAY_SIGNAL_STATUSES = ['active', 'watchlist', 'filled', 'tp_hit', 'sl_hit', 'timed_out'] as const;
+
 export function WatchlistTable() {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +61,7 @@ export function WatchlistTable() {
           .from('ai_signals')
           .select('signal_type, confidence_score, updated_at')
           .eq('symbol', item.symbol)
+          .in('status', DISPLAY_SIGNAL_STATUSES)
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();

@@ -11,6 +11,8 @@ interface StockDetailAiSectionProps {
   isApproved: boolean;
 }
 
+const DISPLAY_SIGNAL_STATUSES = ['active', 'watchlist', 'filled', 'tp_hit', 'sl_hit', 'timed_out'] as const;
+
 export async function StockDetailAiSection({ symbol, isApproved }: StockDetailAiSectionProps) {
   const supabase = await createClient();
 
@@ -62,6 +64,7 @@ export async function StockDetailAiSection({ symbol, isApproved }: StockDetailAi
       .from('ai_signals')
       .select('*')
       .eq('symbol', symbol)
+      .in('status', DISPLAY_SIGNAL_STATUSES)
       .order('created_at', { ascending: false })
       .limit(1);
 

@@ -12,6 +12,7 @@ const ENGINE_STYLE_BY_KEY: Record<string, string> = {
   INVESTOR_V1: 'Long-Term',
   INVESTOR: 'Long-Term',
   SCALP_V1_MICROEDGE: 'Scalp Momentum',
+  QUICK_PROFIT_V1: 'Scalp Momentum',
   CRYPTO_V1_SHADOW: 'Crypto Momentum',
 };
 
@@ -20,6 +21,7 @@ const ENGINE_STYLE_BY_TYPE: Record<string, string> = {
   DAYTRADER: 'Daytrade Momentum',
   INVESTOR: 'Long-Term',
   SCALP: 'Scalp Momentum',
+  QUICK_PROFIT: 'Scalp Momentum',
   CRYPTO: 'Crypto Momentum',
 };
 

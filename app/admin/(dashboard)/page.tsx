@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { KPITile } from '@/components/admin/kpi-tile'
-import { Users, DollarSign, TrendingUp, AlertTriangle, Cpu, Database } from 'lucide-react'
+import { Users, TrendingUp, AlertTriangle, Cpu, Database } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { UserGrowthChart } from '@/components/charts/user-growth-chart'
 import { RevenueChart } from '@/components/charts/revenue-chart'
@@ -11,13 +11,13 @@ async function getDashboardStats() {
 
   // Get user counts
   const { count: totalUsers } = await supabase
-    .from('users')
+    .from('user_profile')
     .select('*', { count: 'exact', head: true })
 
   // Get users from last 24h
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const { count: newUsersToday } = await supabase
-    .from('users')
+    .from('user_profile')
     .select('*', { count: 'exact', head: true })
     .gte('created_at', oneDayAgo)
 
@@ -51,7 +51,6 @@ async function getDashboardStats() {
   const dataProviderCostToday = dataCostsToday?.reduce((sum, row) => sum + (row.cost_usd || 0), 0) || 0
 
   // Get user growth data for last 30 days
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
   const userGrowthData = []
   
   for (let i = 29; i >= 0; i--) {
@@ -59,7 +58,7 @@ async function getDashboardStats() {
     const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
     
     const { count } = await supabase
-      .from('users')
+      .from('user_profile')
       .select('*', { count: 'exact', head: true })
       .lte('created_at', startOfDay.toISOString())
     

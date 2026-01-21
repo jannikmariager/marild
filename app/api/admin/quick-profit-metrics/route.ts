@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { fetchLatestMinuteBars } from '@/lib/data/alpaca';
 
 const ENGINE_KEY = 'QUICK_PROFIT';
 const ENGINE_VERSION = 'QUICK_PROFIT_V1';
@@ -193,12 +192,29 @@ async function enrichOpenPositions(positions: EnginePositionRow[]): Promise<Form
     ),
   );
 
-  let latestBars: Record<string, { c: number }> = {};
+  // Prefer using our own bars_1m table for marks so admin UI is consistent with
+  // the rest of the engine stack and does not depend on external APIs.
+  let latestCloses: Record<string, number> = {};
   if (tickers.length > 0) {
-    try {
-      latestBars = await fetchLatestMinuteBars(tickers);
-    } catch (err) {
-      console.error('[quick-profit-metrics] Failed to fetch latest bars', err);
+    const { data, error } = await supabase
+      .from('bars_1m')
+      .select('symbol, ts, close')
+      .in('symbol', tickers)
+      .order('ts', { ascending: false })
+      .limit(tickers.length * 50);
+
+    if (error) {
+      console.error('[quick-profit-metrics] Failed to load bars_1m for marks', error.message ?? error);
+    } else if (data) {
+      latestCloses = {};
+      for (const row of data as Array<{ symbol: string; ts: string; close: number }>) {
+        const symbol = (row.symbol || '').toUpperCase();
+        if (!symbol) continue;
+        if (latestCloses[symbol] !== undefined) continue; // already have latest due to ts DESC
+        const val = Number(row.close);
+        if (!Number.isFinite(val)) continue;
+        latestCloses[symbol] = val;
+      }
     }
   }
 
@@ -208,7 +224,7 @@ async function enrichOpenPositions(positions: EnginePositionRow[]): Promise<Form
     const entryPrice = entryPriceRaw ?? 0;
     const qtyRaw = toNumber(pos.qty);
     const qty = qtyRaw ?? 0;
-    const bar = ticker ? latestBars[ticker] : null;
+    const markFromBars = ticker ? latestCloses[ticker] : undefined;
     const meta = (pos.management_meta as Record<string, unknown> | null) ?? null;
     let metaMarkPrice: number | null = null;
     if (meta) {
@@ -221,7 +237,10 @@ async function enrichOpenPositions(positions: EnginePositionRow[]): Promise<Form
         metaMarkPrice = toNumber(rawMetaPrice);
       }
     }
-    const markPrice = bar?.c !== undefined ? Number(bar.c) : metaMarkPrice ?? entryPrice;
+    const markPrice =
+      markFromBars !== undefined && Number.isFinite(markFromBars)
+        ? Number(markFromBars)
+        : metaMarkPrice ?? entryPrice;
     const direction = directionMultiplier(pos.side);
     const pnlDollars =
       qtyRaw !== null && entryPriceRaw !== null && markPrice !== null

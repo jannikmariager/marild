@@ -5,6 +5,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { CreditCard, TrendingUp, Users, DollarSign } from 'lucide-react'
 import { KPITile } from '@/components/admin/kpi-tile'
 import { formatDistanceToNow } from 'date-fns'
+type SubscriptionLog = {
+  id: string
+  event_type: string
+  amount?: number | null
+  amount_usd?: number | null
+  country?: string | null
+  timestamp?: string | null
+}
 
 async function getSubscriptionStats() {
   const supabase = await createAdminClient()
@@ -23,9 +31,9 @@ async function getSubscriptionStats() {
 
   // Get active subscriptions count (from users)
   const { count: activeSubscriptions } = await supabase
-    .from('users')
+    .from('subscription_status')
     .select('*', { count: 'exact', head: true })
-    .in('role', ['premium', 'pro'])
+    .in('tier', ['premium', 'pro', 'pro_plus', 'pro_tier'])
 
   // Get recent subscription events
   const { data: events } = await supabase
@@ -123,7 +131,7 @@ export default async function SubscriptionsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                stats.events.map((event: any) => (
+                stats.events.map((event: SubscriptionLog) => (
                   <TableRow key={event.id}>
                     <TableCell>
                       <Badge variant="secondary" className={getEventColor(event.event_type)}>

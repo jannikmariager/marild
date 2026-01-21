@@ -11,6 +11,7 @@ import {
   BarChart3,
   ListChecks,
   Shield,
+  Users,
 } from 'lucide-react'
 
 const navigation = [
@@ -20,6 +21,7 @@ const navigation = [
   { name: '  └ Crypto V1', href: '/admin/engine-metrics/crypto-v1-shadow', icon: Cpu },
   { name: '  └ QUICK_PROFIT_V1', href: '/admin/engine-metrics/quick-profit', icon: Cpu },
   { name: 'Engine Performance', href: '/admin/engines', icon: TrendingUp },
+  { name: 'Users', href: '/admin/users', icon: Users },
   { name: 'Ticker Whitelist', href: '/admin/whitelist', icon: ListChecks },
   { name: 'Signals', href: '/admin/signals', icon: BarChart3 },
   { name: '  └ Debug', href: '/admin/signals/debug', icon: Bug },

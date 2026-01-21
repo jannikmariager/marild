@@ -21,6 +21,8 @@ interface PriceItem {
   updatedAt: string | null;
 }
 
+const DISPLAY_SIGNAL_STATUSES = ['active', 'watchlist', 'filled', 'tp_hit', 'sl_hit', 'timed_out'] as const;
+
 export function WatchlistAssetList() {
   const [items, setItems] = useState<WatchlistRow[]>([]);
   const [prices, setPrices] = useState<Record<string, PriceItem>>({});
@@ -68,6 +70,7 @@ export function WatchlistAssetList() {
           .from('ai_signals')
           .select('symbol, signal_type, confidence_score, updated_at')
           .in('symbol', symbols)
+          .in('status', DISPLAY_SIGNAL_STATUSES)
           .order('updated_at', { ascending: false });
 
         const latestBySymbol: Record<string, { type: 'buy' | 'sell' | 'neutral' | null; conf: number | null }> = {};

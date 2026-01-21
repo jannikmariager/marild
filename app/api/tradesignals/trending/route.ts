@@ -64,12 +64,8 @@ export async function GET() {
     const { data: signals, error: signalsError } = await supabase
       .from('ai_signals')
       .select('*')
-      // NOTE: We intentionally do NOT filter on visibility_state here. The
-      // visibility evaluator uses null / 'app_only' / 'app_discord' etc.
-      // A simple .neq('hidden') would also filter out nulls, which is wrong
-      // for freshly-generated signals like the ones we want to surface here.
-      .order('confidence_score', { ascending: false })
-      .order('created_at', { ascending: false })
+      .in('status', ['active', 'watchlist'])
+      .order('signal_bar_ts', { ascending: false })
       .limit(10);
 
     if (signalsError) {
@@ -171,8 +167,8 @@ export async function GET() {
     // Transform signals to match expected format
     const transformedSignals = signals.slice(0, 5).map((signal) => {
       const quote = quoteMap.get(signal.symbol);
-      const isBuy = signal.signal_type?.toLowerCase().includes('buy') || 
-                    signal.action?.toLowerCase() === 'buy';
+      const isBuy = signal.signal_type?.toLowerCase().includes('buy') ||
+        signal.action?.toLowerCase() === 'buy';
 
       return {
         symbol: signal.symbol,
@@ -182,6 +178,8 @@ export async function GET() {
         change_today: quote?.change_percent || 0,
         summary: signal.reasoning?.split('.')[0] || 'AI signal detected',
         updated_at: signal.created_at || new Date().toISOString(),
+        trade_gate_allowed: signal.trade_gate_allowed ?? false,
+        status: signal.status,
       };
     });
 

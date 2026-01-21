@@ -63,7 +63,7 @@ interface HeartbeatStatus {
 
 type EngineMetricWithKey = EngineMetric & { engine_key?: string | null }
 
-const HIDDEN_SHADOW_VERSIONS = new Set(['SCALP_V1_MICROEDGE', 'SWING_V1_12_15DEC', 'SWING_FAV8_SHADOW'])
+const HIDDEN_SHADOW_VERSIONS = new Set(['SWING_V1_12_15DEC', 'SWING_FAV8_SHADOW'])
 
 const getShadowSlug = (engine: EngineMetricWithKey) => {
   const engineKey = (engine.engine_key || '').toUpperCase()
@@ -71,7 +71,7 @@ const getShadowSlug = (engine: EngineMetricWithKey) => {
   if (engineKey === 'CRYPTO_V1_SHADOW' || version === 'CRYPTO_V1_SHADOW' || version === 'V1') {
     return 'crypto-v1-shadow'
   }
-  if (version === 'QUICK_PROFIT_V1') {
+  if (version === 'QUICK_PROFIT_V1' || version === 'SCALP_V1_MICROEDGE') {
     return 'quick-profit'
   }
   return version.toLowerCase().replace(/_/g, '-')

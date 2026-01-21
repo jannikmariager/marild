@@ -16,10 +16,9 @@ const PUBLIC_ROUTES = [
   "/admin", // TEMPORARY: for local dev testing
 ];
 
-// Admin routes that require admin role
-const ADMIN_ROUTES = ["/admin"];
+// Admin routes that require admin role (currently enforced elsewhere)
+// const ADMIN_ROUTES = ["/admin"];
 const LEGACY_ADMIN_ROUTES = [
-  "/admin/users",
   "/admin/subscriptions",
   "/admin/revenue",
   "/admin/ai-tokens",
@@ -79,7 +78,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           response = NextResponse.next({
