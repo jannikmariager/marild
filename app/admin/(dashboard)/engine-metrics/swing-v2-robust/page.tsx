@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { NyTimeBadge } from '@/components/admin/NyTimeBadge';
+import { formatNyDate, getNyDayKey } from '@/lib/datetime';
 
 interface EngineTrade {
   ticker: string | null;
@@ -79,6 +81,28 @@ export default function SwingV2RobustPage() {
     fetchData();
   }, []);
 
+  const recentTrades = (engine?.recent_trades || []).slice(0, 25);
+
+  type TradeGroup = { key: string; label: string; trades: EngineTrade[]; timestamp: number };
+  const groupedTrades = useMemo<TradeGroup[]>(() => {
+    const map = new Map<string, TradeGroup>();
+    for (const trade of allTrades) {
+      if (!trade.exit_timestamp) continue;
+      const key = getNyDayKey(trade.exit_timestamp);
+      if (!key) continue;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: formatNyDate(trade.exit_timestamp),
+          trades: [],
+          timestamp: new Date(trade.exit_timestamp).getTime(),
+        });
+      }
+      map.get(key)!.trades.push(trade);
+    }
+    return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp);
+  }, [allTrades]);
+
   if (loading) {
     return <div className="space-y-6"><div><h1 className="text-3xl font-bold">Engine Metrics</h1><p className="text-muted-foreground mt-2">Loading...</p></div></div>;
   }
@@ -87,20 +111,7 @@ export default function SwingV2RobustPage() {
     return <div className="space-y-6"><div><h1 className="text-3xl font-bold">Engine Metrics</h1><p className="text-red-600 mt-2">Error: {error}</p></div></div>;
   }
 
-  const recentTrades = (engine.recent_trades || []).slice(0, 25);
-
-  const tradesByDay: { [key: string]: EngineTrade[] } = {};
-  allTrades.forEach(trade => {
-    if (trade.exit_timestamp) {
-      const day = new Date(trade.exit_timestamp).toLocaleDateString();
-      if (!tradesByDay[day]) tradesByDay[day] = [];
-      tradesByDay[day].push(trade);
-    }
-  });
-
-  const last7Days = Object.keys(tradesByDay)
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-    .slice(0, 7);
+  const last7Days = groupedTrades.slice(0, 7);
 
   const toggleDay = (day: string) => {
     const newExpanded = new Set(expandedDays);
@@ -147,7 +158,7 @@ export default function SwingV2RobustPage() {
                   {Number(trade.realized_pnl_r ?? 0).toFixed(2)}R
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {trade.exit_timestamp ? new Date(trade.exit_timestamp).toLocaleDateString() : '—'}
+                  {trade.exit_timestamp ? formatNyDate(trade.exit_timestamp) : '—'}
                 </TableCell>
               </TableRow>
             );
@@ -159,12 +170,17 @@ export default function SwingV2RobustPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-bold">SWING_V2_ROBUST</h1>
-          <Badge className="bg-purple-100 text-purple-700 border-purple-300">SHADOW</Badge>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold">SWING_V2_ROBUST</h1>
+            <Badge className="bg-purple-100 text-purple-700 border-purple-300">SHADOW</Badge>
+          </div>
+          <p className="text-muted-foreground mt-2">
+            Robust swing trading strategy with overnight capital hygiene and early profit protection
+          </p>
         </div>
-        <p className="text-muted-foreground mt-2">Robust swing trading strategy with overnight capital hygiene and early profit protection</p>
+        <NyTimeBadge />
       </div>
 
       {/* Engine Parameters */}
@@ -298,21 +314,21 @@ export default function SwingV2RobustPage() {
           {last7Days.length === 0 ? (
             <p className="text-muted-foreground">No trades in last 7 days</p>
           ) : (
-            last7Days.map(day => {
-              const dayTrades = tradesByDay[day];
+            last7Days.map(group => {
+              const dayTrades = group.trades;
               const dayWins = dayTrades.filter(t => Number(t.realized_pnl_dollars ?? 0) >= 0).length;
               const dayPnL = dayTrades.reduce((sum, t) => sum + Number(t.realized_pnl_dollars ?? 0), 0);
               const isExpanded = expandedDays.has(day);
 
               return (
-                <div key={day}>
+                <div key={group.key}>
                   <button
-                    onClick={() => toggleDay(day)}
+                    onClick={() => toggleDay(group.key)}
                     className="w-full flex items-center justify-between p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-3 text-sm">
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      <span className="font-medium">{day}</span>
+                      <span className="font-medium">{group.label}</span>
                       <span className="text-muted-foreground">{dayTrades.length} trades</span>
                       <span className={dayPnL >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
                         {dayPnL >= 0 ? '+' : ''} ${dayPnL.toFixed(2)}
@@ -343,46 +359,39 @@ export default function SwingV2RobustPage() {
             <p className="text-muted-foreground">No trades yet</p>
           ) : (
             <div className="space-y-6">
-              {Object.entries(
-                allTrades.reduce((acc: { [key: string]: EngineTrade[] }, trade) => {
-                  if (trade.exit_timestamp) {
-                    const date = new Date(trade.exit_timestamp).toLocaleDateString()
-                    if (!acc[date]) acc[date] = []
-                    acc[date].push(trade)
-                  }
-                  return acc
-                }, {})
-              )
-                .sort(([dateA], [dateB]) => new Date(dateB).getTime() - new Date(dateA).getTime())
-                .map(([date, trades]) => {
-                  const dateTrades = trades.sort((a, b) => {
-                    const aTime = a.exit_timestamp ? new Date(a.exit_timestamp).getTime() : 0
-                    const bTime = b.exit_timestamp ? new Date(b.exit_timestamp).getTime() : 0
-                    return bTime - aTime
-                  })
-                  const dayWins = dateTrades.filter(t => Number(t.realized_pnl_dollars ?? 0) >= 0).length
-                  const dayPnL = dateTrades.reduce((sum, t) => sum + Number(t.realized_pnl_dollars ?? 0), 0)
-                  const dayAvgR = dateTrades.length > 0 ? dateTrades.reduce((sum, t) => sum + Number(t.realized_pnl_r ?? 0), 0) / dateTrades.length : 0
+              {groupedTrades.map(({ key, label, trades }) => {
+                const sortedTrades = [...trades].sort((a, b) => {
+                  const aTime = a.exit_timestamp ? new Date(a.exit_timestamp).getTime() : 0
+                  const bTime = b.exit_timestamp ? new Date(b.exit_timestamp).getTime() : 0
+                  return bTime - aTime
+                })
+                const dayWins = sortedTrades.filter(t => Number(t.realized_pnl_dollars ?? 0) >= 0).length
+                const dayPnL = sortedTrades.reduce((sum, t) => sum + Number(t.realized_pnl_dollars ?? 0), 0)
+                const dayAvgR = sortedTrades.length > 0
+                  ? sortedTrades.reduce((sum, t) => sum + Number(t.realized_pnl_r ?? 0), 0) / sortedTrades.length
+                  : 0
 
-                  return (
-                    <div key={date} className="border-b last:border-b-0 pb-4 last:pb-0">
-                      <div className="flex items-center justify-between mb-4 py-2">
-                        <h3 className="font-semibold text-sm">{date}</h3>
-                        <div className="flex items-center gap-4 text-xs">
-                          <span className="text-muted-foreground">{dateTrades.length} trades</span>
-                          <span className={dayPnL >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
-                            {dayPnL >= 0 ? '+' : ''} ${dayPnL.toFixed(2)}
-                          </span>
-                          <Badge variant="outline" className="text-xs">{dayWins}W / {dateTrades.length - dayWins}L</Badge>
-                          <span className={dayAvgR >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
-                            Avg: {dayAvgR.toFixed(2)}R
-                          </span>
-                        </div>
+                return (
+                  <div key={key} className="border-b last:border-b-0 pb-4 last:pb-0">
+                    <div className="flex items-center justify-between mb-4 py-2">
+                      <h3 className="font-semibold text-sm">{label}</h3>
+                      <div className="flex items-center gap-4 text-xs">
+                        <span className="text-muted-foreground">{sortedTrades.length} trades</span>
+                        <span className={dayPnL >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                          {dayPnL >= 0 ? '+' : ''} ${dayPnL.toFixed(2)}
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {dayWins}W / {sortedTrades.length - dayWins}L
+                        </Badge>
+                        <span className={dayAvgR >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                          Avg: {dayAvgR.toFixed(2)}R
+                        </span>
                       </div>
-                      <TradesTable trades={dateTrades} />
                     </div>
-                  )
-                })}
+                    <TradesTable trades={sortedTrades} />
+                  </div>
+                )
+              })}
             </div>
           )}
         </CardContent>

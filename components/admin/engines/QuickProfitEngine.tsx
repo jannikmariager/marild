@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatNyDateTime } from '@/lib/datetime';
 
 type QuickProfitMetrics = {
   total_trades: number;
@@ -302,7 +303,7 @@ export function QuickProfitEngine() {
                     <td className="px-3 py-2 text-right font-mono">
                       {decision.price ? `$${decision.price.toFixed(2)}` : '—'}
                     </td>
-                    <td className="px-3 py-2 text-gray-600">{new Date(decision.created_at).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-gray-600">{formatNyDateTime(decision.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -366,7 +367,7 @@ export function QuickProfitEngine() {
                       {trade.pnl_r != null ? `${trade.pnl_r.toFixed(2)}R` : '—'}
                     </td>
                     <td className="px-3 py-2 text-gray-600">
-                      {trade.exit_time ? new Date(trade.exit_time).toLocaleString() : '—'}
+                      {trade.exit_time ? formatNyDateTime(trade.exit_time) : '—'}
                     </td>
                   </tr>
                 )
@@ -455,7 +456,7 @@ function OpenPositionsPanel({ positions }: { positions: QuickProfitOpenPosition[
                     </td>
                     <td className="px-3 py-2">
                       <div className="font-mono text-sm">{formatCurrency(pos.entry_price)}</div>
-                      <div className="text-[11px] text-muted-foreground">{formatDateTime(pos.entry_time)}</div>
+                      <div className="text-[11px] text-muted-foreground">{formatNyDateTime(pos.entry_time)}</div>
                     </td>
                     <td className="px-3 py-2 font-mono text-sm">{formatCurrency(pos.mark_price)}</td>
                     <td className={`px-3 py-2 text-right font-semibold ${pnlClass}`}>
@@ -529,11 +530,11 @@ function ClosedPositionsPanel({ positions }: { positions: QuickProfitClosedPosit
                       <div className="text-xs">
                         <span className="font-medium text-gray-900">Entry:</span> {formatCurrency(pos.entry_price)}
                       </div>
-                      <div className="text-[11px] text-muted-foreground">{formatDateTime(pos.entry_time)}</div>
+                      <div className="text-[11px] text-muted-foreground">{formatNyDateTime(pos.entry_time)}</div>
                       <div className="text-xs pt-1">
                         <span className="font-medium text-gray-900">Exit:</span> {formatCurrency(pos.exit_price)}
                       </div>
-                      <div className="text-[11px] text-muted-foreground">{formatDateTime(pos.exit_time)}</div>
+                      <div className="text-[11px] text-muted-foreground">{formatNyDateTime(pos.exit_time)}</div>
                     </td>
                     <td className={`px-3 py-2 text-right font-semibold ${pnlClass}`}>
                       <div className="font-mono">{formatSignedCurrency(pos.realized_pnl)}</div>
@@ -594,12 +595,6 @@ function formatQty(value: number | null | undefined) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })
 }
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString()
-}
 
 function pnlColor(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return 'text-gray-700'
@@ -624,7 +619,7 @@ function ManagementBadges({
     badges.push({
       label: 'Breakeven',
       classes: 'bg-emerald-100 text-emerald-800',
-      title: beActivatedAt ? `Activated ${formatDateTime(beActivatedAt)}` : undefined,
+      title: beActivatedAt ? `Activated ${formatNyDateTime(beActivatedAt)}` : undefined,
     })
   }
   if (trailActive) {
