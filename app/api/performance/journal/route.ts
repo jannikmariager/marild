@@ -134,7 +134,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to load journal data' }, { status: 500 })
     }
 
-    const safeTrades: JournalTradeRow[] = (trades ?? []) as JournalTradeRow[]
+    const supabaseTradeRows: unknown[] = Array.isArray(trades) ? trades : []
+    const safeTrades: JournalTradeRow[] = supabaseTradeRows.filter(
+      (row): row is JournalTradeRow =>
+        row != null && typeof row === 'object' && 'strategy' in row && 'realized_pnl_dollars' in row,
+    )
     const filteredTrades = shouldFilterByEngine
       ? safeTrades.filter((t) => (t.engine_version ? engineVersionSet.has(t.engine_version) : false))
       : safeTrades
