@@ -27,13 +27,6 @@ interface AISignalForEnrichment {
 interface EnrichmentResult {
   reasoning?: string
   reasons?: Record<string, string> | { items: string[] }
-  smc_analysis?: string
-  price_action_analysis?: string
-  volume_analysis?: string
-  smc_confidence?: number
-  volume_confidence?: number
-  sentiment_confidence?: number
-  confluence_score?: number
   correction_risk?: number
 }
 
@@ -58,7 +51,7 @@ async function callOpenAI(signal: AISignalForEnrichment): Promise<EnrichmentResu
   const systemPrompt =
     'You are an institutional-grade trading analyst. Given a deterministic swing trade signal, produce clear, concise analysis suitable for a trading journal. Respond ONLY with a single JSON object.'
 
-  const userPrompt = `Signal JSON (fields may be null):\n${JSON.stringify(payload)}\n\nReturn JSON with this shape:\n{\n  "reasoning": string,\n  "reasons": {\n    "smc": string,\n    "price_action": string,\n    "volume": string,\n    "sentiment": string,\n    "fundamentals": string,\n    "macro": string,\n    "confluence": string\n  },\n  "smc_analysis": string,\n  "price_action_analysis": string,\n  "volume_analysis": string,\n  "smc_confidence": number,\n  "volume_confidence": number,\n  "sentiment_confidence": number,\n  "confluence_score": number,\n  "correction_risk": number\n}\n\nUse 2–4 sentences per field, be specific but avoid fluff. If you lack information for a factor, write a short sentence explaining that rather than leaving it empty.`
+  const userPrompt = `Signal JSON (fields may be null):\n${JSON.stringify(payload)}\n\nReturn JSON with this shape:\n{\n  "reasoning": string,\n  "reasons": {\n    "smc": string,\n    "price_action": string,\n    "volume": string,\n    "sentiment": string,\n    "fundamentals": string,\n    "macro": string,\n    "confluence": string\n  },\n  "correction_risk": number\n}\n\nUse 2–4 sentences per field, be specific but avoid fluff. If you lack information for a factor, write a short sentence explaining that rather than leaving it empty.`
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -157,14 +150,6 @@ async function handle(request: NextRequest) {
 
       if (enrichment.reasoning) update.reasoning = enrichment.reasoning
       if (enrichment.reasons) update.reasons = enrichment.reasons
-      if (enrichment.smc_analysis) update.smc_analysis = enrichment.smc_analysis
-      if (enrichment.price_action_analysis) update.price_action_analysis = enrichment.price_action_analysis
-      if (enrichment.volume_analysis) update.volume_analysis = enrichment.volume_analysis
-      if (typeof enrichment.smc_confidence === 'number') update.smc_confidence = enrichment.smc_confidence
-      if (typeof enrichment.volume_confidence === 'number') update.volume_confidence = enrichment.volume_confidence
-      if (typeof enrichment.sentiment_confidence === 'number')
-        update.sentiment_confidence = enrichment.sentiment_confidence
-      if (typeof enrichment.confluence_score === 'number') update.confluence_score = enrichment.confluence_score
       if (typeof enrichment.correction_risk === 'number') update.correction_risk = enrichment.correction_risk
 
       const { error: updateError } = await supabaseAdmin
