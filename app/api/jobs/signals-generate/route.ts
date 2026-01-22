@@ -130,9 +130,9 @@ async function handle(request: NextRequest) {
 
     const body = oneHourBar.close - oneHourBar.open
     const bodyPct = Math.abs(body) / oneHourBar.open
-    // TEMP: disable minimum body-size filter so we always emit a signal when
-    // we have a valid 1h/4h bar. Signal quality is still reflected in
-    // confidence (which uses bodyPct) and trend alignment.
+    // TEMP: minimum body-size filter remains disabled so we always emit a signal
+    // when we have a valid 1h bar. Signal quality is reflected in the
+    // confidence score and trend alignment instead of a hard cut-off.
     // if (bodyPct < MIN_BODY_PCT) {
     //   noSetup += 1
     //   noSetupSymbols.push(symbol)
@@ -148,15 +148,27 @@ async function handle(request: NextRequest) {
       trendAligned = (direction === 'buy' && trend >= 0) || (direction === 'sell' && trend <= 0)
     }
 
-    const confidence = Math.min(100, Math.round(bodyPct * 10000 + (trendAligned ? 10 : 0)))
+    // --- Deterministic confidence scoring ---
+    // Base score from 1h candle body. A 0.5% body ~40, 1.0% body ~70, capped at 70
+    // so we avoid constant 100% saturation on strong moves.
+    const bodyScoreRaw = Math.round(bodyPct * 8000)
+    const bodyScore = Math.max(5, Math.min(70, bodyScoreRaw))
 
-    const entry = oneHourBar.close
-    const stop =
-      direction === 'buy'
-        ? Math.min(oneHourBar.low, entry * 0.995)
-        : Math.max(oneHourBar.high, entry * 1.005)
-    const tp1 = direction === 'buy' ? entry * 1.015 : entry * 0.985
+    // Trend bonus: trend-aligned setups receive a boost, counter-trend do not.
+        const tradeGateAllowed = !marketClock.isPreTradeGate(now)
+    const tradeGateReason = tradeGateAllowed ? 'TRADE_ALLOWED' : 'PRE_MARKET_BLOCK'
+    const blockedUntil = tradeGateAllowed ? null : marketClock.config.tradeStartEt
+    const status = tradeGateAllowed ? 'active' : 'watchlist'
+
+    const aiEnriched = false
+ection === 'buy' ? entry * 1.015 : entry * 0.985
     const tp2 = direction === 'buy' ? entry * 1.03 : entry * 0.97
+
+    // Risk/reward helper for both confidence text and correction_risk.
+    const riskPerShare = Math.abs(entry - stop)
+    const rewardPerShare = Math.abs(tp1 - entry)
+    const hasValidRR = riskPerShare > 0 && rewardPerShare > 0
+    const rr = hasValidRR ? rewardPerShare / riskPerShare : null
 
     const tradeGateAllowed = !marketClock.isPreTradeGate(now)
     const tradeGateReason = tradeGateAllowed ? 'TRADE_ALLOWED' : 'PRE_MARKET_BLOCK'
@@ -164,9 +176,6 @@ async function handle(request: NextRequest) {
     const status = tradeGateAllowed ? 'active' : 'watchlist'
 
     const aiEnriched = false
-    const reasoning = trendAligned
-      ? `Trend-aligned ${direction.toUpperCase()} setup with ${confidence}% confidence.`
-      : `Counter-trend ${direction.toUpperCase()} setup; awaiting confirmation.`
 
     await supabaseAdmin
       .from('ai_signals')
@@ -184,19 +193,62 @@ async function handle(request: NextRequest) {
       supabase: supabaseAdmin,
     })
 
+    // Volatility-aware adjustments
+    if (volatility.state === 'LOW') {
+      volScore = 5
+    } else if (volatility.state === 'NORMAL') {
+      volScore = 10
+    } else if (volatility.state === 'HIGH') {
+      volScore = 15
+    } else if (volatility.state === 'EXTREME') {
+      volScore = 5
+    }
+
+    const rawConfidence = bodyScore + trendScore + volScore
+    const confidence = Math.max(10, Math.min(99, rawConfidence))
+
+    // Deterministic correction risk: combines volatility, trend alignment and R/R.
+    let correctionRisk = 50
+
+    // Volatility impact
+    if (volatility.state === 'LOW') correctionRisk -= 10
+    if (volatility.state === 'HIGH') correctionRisk += 10
+    if (volatility.state === 'EXTREME') correctionRisk += 20
+
+    // Counter-trend setups are inherently riskier
+    if (!trendAligned) correctionRisk += 10
+
+    // Reward-to-risk impact
+    if (rr != null) {
+      if (rr >= 3) correctionRisk -= 10
+      else if (rr >= 2) correctionRisk -= 5
+      else if (rr <= 1.2) correctionRisk += 10
+    }
+
+    correctionRisk = Math.max(5, Math.min(95, Math.round(correctionRisk)))
+
+    const aiEnrichedReason = (() => {
+      const dirLabel = direction.toUpperCase()
+      const volLabel = volatility.state.toLowerCase()
+      const rrLabel = rr != null && Number.isFinite(rr) ? `R/R roughly ${rr.toFixed(2)}:1.` : 'R/R cannot be estimated.'
+      const trendLabel = trendAligned ? 'aligned with the 4H trend' : 'against the 4H trend'
+      return `Deterministic ${dirLabel} setup on 1H with ${confidence}% confidence, ${trendLabel} in a ${volLabel} volatility regime. ${rrLabel}`
+    })()
+
     const insertPayload = {
       symbol,
       timeframe: '1h',
       signal_bar_ts: window1h.end.toISO(),
       signal_type: direction,
       confidence_score: confidence,
+      correction_risk: correctionRisk,
       setup_type: trendAligned ? 'trend_follow' : 'counter_trend',
       status,
       entry_price: entry,
       stop_loss: stop,
       take_profit_1: tp1,
       take_profit_2: tp2,
-      reasoning: aiEnriched ? reasoning : `${reasoning} AI enrichment unavailable.`,
+      reasoning: aiEnriched ? aiEnrichedReason : `${aiEnrichedReason} AI enrichment unavailable.`,
       ai_decision: direction === 'buy' ? 'long' : 'short',
       ai_enriched: aiEnriched,
       data_freshness_minutes: Math.round(ageMinutes),

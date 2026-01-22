@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { formatNyDateTime } from '@/lib/datetime';
 import { RiskRewardBar } from '@/components/performance/RiskRewardBar';
 
@@ -139,7 +139,8 @@ export function QuickProfitEngine() {
     return () => clearInterval(interval);
   }, []);
  
-  async function fetchData(showSpinner: boolean) {
+  async function fetchData(showSpinnerOrEvent?: boolean | ReactMouseEvent<HTMLButtonElement>) {
+    const showSpinner = typeof showSpinnerOrEvent === 'boolean' ? showSpinnerOrEvent : false;
     try {
       if (showSpinner) {
         setIsLoading(true);
