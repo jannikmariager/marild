@@ -155,13 +155,17 @@ async function handle(request: NextRequest) {
     const bodyScore = Math.max(5, Math.min(70, bodyScoreRaw))
 
     // Trend bonus: trend-aligned setups receive a boost, counter-trend do not.
-        const tradeGateAllowed = !marketClock.isPreTradeGate(now)
-    const tradeGateReason = tradeGateAllowed ? 'TRADE_ALLOWED' : 'PRE_MARKET_BLOCK'
-    const blockedUntil = tradeGateAllowed ? null : marketClock.config.tradeStartEt
-    const status = tradeGateAllowed ? 'active' : 'watchlist'
+    const trendScore = trendAligned ? 20 : 5
 
-    const aiEnriched = false
-ection === 'buy' ? entry * 1.015 : entry * 0.985
+    // Volatility contribution, refined after we evaluate volatility below.
+    let volScore = 10
+
+    const entry = oneHourBar.close
+    const stop =
+      direction === 'buy'
+        ? Math.min(oneHourBar.low, entry * 0.995)
+        : Math.max(oneHourBar.high, entry * 1.005)
+    const tp1 = direction === 'buy' ? entry * 1.015 : entry * 0.985
     const tp2 = direction === 'buy' ? entry * 1.03 : entry * 0.97
 
     // Risk/reward helper for both confidence text and correction_risk.
