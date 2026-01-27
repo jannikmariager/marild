@@ -46,6 +46,16 @@ type StockShadowData = {
   overrideCurrentEquity: number | null
 }
 
+function directionMultiplier(side: 'LONG' | 'SHORT' | null | undefined) {
+  return side === 'SHORT' ? -1 : 1
+}
+
+function toNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 type ServiceSupabaseClient = SupabaseClient<any, any, any, any, any>
 
 async function fetchStockShadowData(
@@ -426,6 +436,132 @@ export async function GET(request: NextRequest) {
           portfolioData = stockResult.portfolioData
           overrideStartingEquity = stockResult.overrideStartingEquity
           overrideCurrentEquity = stockResult.overrideCurrentEquity
+
+          // Quick profit shadow engine currently books closes in engine_positions
+          // rather than engine_trades. To ensure the admin metrics reflect real
+          // shadow activity, derive trade data and open-position unrealized PnL
+          // from engine_positions when the engine_version is QUICK_PROFIT_V1.
+          if (versionKey === 'QUICK_PROFIT_V1') {
+            const { data: qpClosed, error: qpClosedError } = await supabase
+              .from('engine_positions')
+              .select(
+                'ticker, side, entry_price, exit_price, realized_pnl, realized_r, opened_at, closed_at, status',
+              )
+              .eq('engine_key', sourceEngineKey)
+              .eq('engine_version', sourceEngineVersion)
+              .eq('run_mode', version.run_mode)
+              .eq('status', 'CLOSED')
+
+            if (qpClosedError) {
+              console.error('Error fetching Quick Profit CLOSED positions for engine-metrics:', qpClosedError)
+            } else if (qpClosed && qpClosed.length > 0) {
+              tradeData = (qpClosed as any[]).map((p) => ({
+                ticker: p.ticker,
+                side: p.side,
+                entry_price: p.entry_price,
+                exit_price: p.exit_price,
+                realized_pnl_dollars: p.realized_pnl,
+                realized_pnl_r: p.realized_r,
+                exit_timestamp: p.closed_at,
+                entry_timestamp: p.opened_at,
+              }))
+            }
+
+            // Derive unrealized PnL from current OPEN positions using live marks
+            try {
+              const { data: qpOpen, error: qpOpenError } = await supabase
+                .from('engine_positions')
+                .select('ticker, side, qty, entry_price, management_meta')
+                .eq('engine_key', sourceEngineKey)
+                .eq('engine_version', sourceEngineVersion)
+                .eq('run_mode', version.run_mode)
+                .eq('status', 'OPEN')
+
+              if (qpOpenError) {
+                console.error('Error fetching Quick Profit OPEN positions for engine-metrics:', qpOpenError)
+              } else if (qpOpen && qpOpen.length > 0) {
+                const positions = qpOpen as Array<{
+                  ticker: string | null
+                  side: 'LONG' | 'SHORT' | null
+                  qty: number | string | null
+                  entry_price: number | string | null
+                  management_meta: Record<string, unknown> | null
+                }>
+
+                const tickers = Array.from(
+                  new Set(
+                    positions
+                      .map((pos) => (pos.ticker || '').trim().toUpperCase())
+                      .filter((ticker) => ticker.length > 0),
+                  ),
+                )
+
+                let latestCloses: Record<string, number> = {}
+                if (tickers.length > 0) {
+                  const { data: barRows, error: barsError } = await supabase
+                    .from('bars_1m')
+                    .select('symbol, ts, close')
+                    .in('symbol', tickers)
+                    .order('ts', { ascending: false })
+                    .limit(tickers.length * 50)
+
+                  if (barsError) {
+                    console.error('[engine-metrics] Failed to load bars_1m for Quick Profit marks', barsError.message ?? barsError)
+                  } else if (barRows) {
+                    latestCloses = {}
+                    for (const row of barRows as Array<{ symbol: string; ts: string; close: number }>) {
+                      const symbol = (row.symbol || '').toUpperCase()
+                      if (!symbol) continue
+                      if (latestCloses[symbol] !== undefined) continue
+                      const val = Number(row.close)
+                      if (!Number.isFinite(val)) continue
+                      latestCloses[symbol] = val
+                    }
+                  }
+                }
+
+                let qpUnrealized = 0
+                for (const pos of positions) {
+                  const ticker = (pos.ticker || '').toUpperCase()
+                  const entryPriceRaw = toNumber(pos.entry_price)
+                  const entryPrice = entryPriceRaw ?? 0
+                  const qtyRaw = toNumber(pos.qty)
+                  const qty = qtyRaw ?? 0
+                  const markFromBars = ticker ? latestCloses[ticker] : undefined
+                  const meta = (pos.management_meta as Record<string, unknown> | null) ?? null
+                  let metaMarkPrice: number | null = null
+                  if (meta) {
+                    const rawMetaPrice =
+                      (meta as Record<string, unknown>).last_quote_price ??
+                      (meta as Record<string, unknown>).mark_price ??
+                      (meta as Record<string, unknown>).last_price ??
+                      null
+                    if (typeof rawMetaPrice === 'number' || typeof rawMetaPrice === 'string') {
+                      metaMarkPrice = toNumber(rawMetaPrice)
+                    }
+                  }
+
+                  const markPrice =
+                    markFromBars !== undefined && Number.isFinite(markFromBars)
+                      ? Number(markFromBars)
+                      : metaMarkPrice ?? entryPrice
+
+                  const direction = directionMultiplier(pos.side)
+
+                  if (qtyRaw !== null && entryPriceRaw !== null && markPrice !== null) {
+                    const pnlDollars = (markPrice - entryPrice) * qty * direction
+                    if (Number.isFinite(pnlDollars)) {
+                      qpUnrealized += Number(pnlDollars)
+                    }
+                  }
+                }
+
+                unrealizedPnl = qpUnrealized
+              }
+            } catch (err) {
+              console.error('Error computing Quick Profit unrealized PnL for engine-metrics:', err)
+            }
+          }
         }
       }
 
@@ -453,7 +589,10 @@ export async function GET(request: NextRequest) {
       }
 
       const totalRealized = tradeData.reduce((sum: number, t: any) => sum + (t.realized_pnl_dollars || 0), 0)
-      if (!isPrimary && overrideStartingEquity != null && overrideCurrentEquity != null) {
+      if (!isPrimary && overrideStartingEquity != null && overrideCurrentEquity != null && versionKey !== 'QUICK_PROFIT_V1') {
+        // For generic stock shadow engines, back out unrealized PnL from the
+        // portfolio equity snapshot. QUICK_PROFIT_V1 uses live marks on OPEN
+        // positions instead (computed above) so we avoid double-counting.
         unrealizedPnl = overrideCurrentEquity - overrideStartingEquity - totalRealized
       }
       const todaysRealized = tradeData.reduce(
@@ -594,6 +733,7 @@ export async function GET(request: NextRequest) {
         total_pnl: totalPnl,
         todays_pnl: todaysRealized,
         todays_live_pnl: todaysLivePnl,
+        unrealized_pnl: unrealizedPnl,
         avg_r: avgR,
         max_drawdown: maxDrawdown,
         current_equity: currentEquity,

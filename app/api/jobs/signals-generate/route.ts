@@ -73,6 +73,12 @@ async function handle(request: NextRequest) {
   const noSetupSymbols: string[] = []
   const freshnessLimit = marketClock.maxDataStalenessMinutes()
 
+  // Trade gate is evaluated once per run; all symbols share the same gate state.
+  const tradeGateAllowed = !marketClock.isPreTradeGate(now)
+  const tradeGateReason = tradeGateAllowed ? 'TRADE_ALLOWED' : 'PRE_MARKET_BLOCK'
+  const blockedUntil = tradeGateAllowed ? null : marketClock.config.tradeStartEt
+  const status = tradeGateAllowed ? 'active' : 'watchlist'
+
   for (const symbol of symbols) {
     const volatilityWindowStart = window1h.end.minus({ hours: VOLATILITY_MINUTE_LOOKBACK_HOURS })
     const minuteWindowStart =
@@ -173,11 +179,6 @@ async function handle(request: NextRequest) {
     const rewardPerShare = Math.abs(tp1 - entry)
     const hasValidRR = riskPerShare > 0 && rewardPerShare > 0
     const rr = hasValidRR ? rewardPerShare / riskPerShare : null
-
-    const tradeGateAllowed = !marketClock.isPreTradeGate(now)
-    const tradeGateReason = tradeGateAllowed ? 'TRADE_ALLOWED' : 'PRE_MARKET_BLOCK'
-    const blockedUntil = tradeGateAllowed ? null : marketClock.config.tradeStartEt
-    const status = tradeGateAllowed ? 'active' : 'watchlist'
 
     const aiEnriched = false
 
