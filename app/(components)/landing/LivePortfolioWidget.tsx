@@ -20,6 +20,7 @@ export function LivePortfolioWidget() {
   const [todayPnl, setTodayPnl] = useState<number | null>(null);
   const [openPositions, setOpenPositions] = useState<number | null>(null);
   const [winRate, setWinRate] = useState<number | null>(null);
+  const [totalReturnPct, setTotalReturnPct] = useState<number | null>(null);
   const [marketOpen, setMarketOpen] = useState<boolean>(false);
   const [mounted, setMounted] = useState(false);
   const [spark, setSpark] = useState<number[]>([]);
@@ -96,6 +97,14 @@ export function LivePortfolioWidget() {
           setWinRate(null);
         }
 
+        // Cumulative net return since launch (percentage change vs starting equity)
+        const rawReturn = typeof json.total_return_pct === "number" ? json.total_return_pct : null;
+        if (rawReturn != null) {
+          setTotalReturnPct(Math.round(rawReturn * 100) / 100);
+        } else {
+          setTotalReturnPct(null);
+        }
+
         // Market open heuristic based on US hours (approximate)
         setMarketOpen(isWeekday && isUsSession);
 
@@ -116,8 +125,9 @@ export function LivePortfolioWidget() {
     return () => clearInterval(id);
   }, []);
 
-  const isPositive = (todayPnl ?? 0) > 0;
-  const isNegative = (todayPnl ?? 0) < 0;
+  // Use cumulative return for directional coloring in the hero widget
+  const isPositive = (totalReturnPct ?? 0) > 0;
+  const isNegative = (totalReturnPct ?? 0) < 0;
   const isFlat = !isPositive && !isNegative;
 
   if (!mounted) {
@@ -136,13 +146,13 @@ export function LivePortfolioWidget() {
       <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-purple-500/5 pointer-events-none" />
       
 
-      {/* Today's P&L */}
+      {/* Since launch performance */}
           <div className="mb-1 flex items-center gap-2">
             <div className={`relative flex h-3 w-3 ${marketOpen ? "bg-emerald-500" : "bg-gray-500"} rounded-full`} />
             <div className="text-xs text-muted-foreground">{marketOpen ? "Market open" : "Market closed"}</div>
           </div>
           <div className="mb-6">
-            <div className="text-sm text-muted-foreground mb-1">Today&apos;s P&amp;L</div>
+            <div className="text-sm text-muted-foreground mb-1">Since Launch (Net Return)</div>
             <div
               className={`text-4xl font-bold flex items-center gap-2 transition-colors duration-300 ${
                 isPositive ? "text-emerald-500" : isNegative ? "text-red-500" : "text-muted-foreground"
@@ -157,10 +167,9 @@ export function LivePortfolioWidget() {
                 <Activity className="w-8 h-8 text-muted-foreground" />
               )}
               <span suppressHydrationWarning>
-                ${Math.abs(todayPnl ?? 0).toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
+                {totalReturnPct == null
+                  ? "--%"
+                  : `${totalReturnPct >= 0 ? "+" : ""}${Math.abs(totalReturnPct).toFixed(2)}%`}
               </span>
             </div>
           </div>
