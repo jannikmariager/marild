@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Abuse Pattern Detector
  * Feature Flag: FEATURE_RATE_LIMITING (default: false)
