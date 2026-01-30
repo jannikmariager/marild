@@ -64,7 +64,7 @@ export default async function LiveDecisionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Live Trading Decisions</h1>
           <p className="text-muted-foreground mt-1 text-sm max-w-2xl">
@@ -72,12 +72,20 @@ export default async function LiveDecisionsPage() {
             opened as a position or skipped by the portfolio manager.
           </p>
         </div>
-        <Link
-          href="/admin/signals"
-          className="text-sm text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-        >
-          ← Back to Signals overview
-        </Link>
+        <div className="flex items-center gap-3 text-sm">
+          <Link
+            href="/admin/signals/trades-by-signal"
+            className="text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+          >
+            View trades grouped by signal_id 9
+          </Link>
+          <Link
+            href="/admin/signals"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            0 Back to Signals overview
+          </Link>
+        </div>
       </div>
 
       <Card>

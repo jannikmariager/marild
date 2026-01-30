@@ -180,6 +180,8 @@ async function handle(request: NextRequest) {
     const hasValidRR = riskPerShare > 0 && rewardPerShare > 0
     const rr = hasValidRR ? rewardPerShare / riskPerShare : null
 
+    // AI enrichment layer is currently disabled; we still generate a deterministic
+    // plain-English reasoning string so the user understands the setup.
     const aiEnriched = false
 
     await supabaseAdmin
@@ -253,7 +255,10 @@ async function handle(request: NextRequest) {
       stop_loss: stop,
       take_profit_1: tp1,
       take_profit_2: tp2,
-      reasoning: aiEnriched ? aiEnrichedReason : `${aiEnrichedReason} AI enrichment unavailable.`,
+      // Even when ai_enriched=false we still store a clear deterministic reasoning string.
+      // The LLM explanation layer can later set ai_enriched=true and extend this field,
+      // but end-users should not see "AI enrichment unavailable" as a normal state.
+      reasoning: aiEnriched ? aiEnrichedReason : aiEnrichedReason,
       ai_decision: direction === 'buy' ? 'long' : 'short',
       ai_enriched: aiEnriched,
       data_freshness_minutes: Math.round(ageMinutes),

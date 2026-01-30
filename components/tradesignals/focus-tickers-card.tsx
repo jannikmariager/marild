@@ -37,6 +37,8 @@ interface SignalData {
   price_action_analysis?: string;
   volume_analysis?: string;
   market_structure?: string;
+  engine_type?: string;
+  trading_style?: string;
 }
 
 interface LivePosition {
@@ -110,9 +112,10 @@ export function FocusTickersCard() {
         const [signalRes, positionsRes] = await Promise.all([
           supabase
             .from('ai_signals')
-            .select('symbol, signal_type, entry_price, stop_loss, take_profit_1, take_profit_2, reasoning, created_at, correction_risk, timeframe, confidence_score')
+            .select('symbol, signal_type, entry_price, stop_loss, take_profit_1, take_profit_2, reasoning, created_at, correction_risk, timeframe, confidence_score, engine_type, trading_style')
             .in('symbol', symbols)
             .in('status', DISPLAY_SIGNAL_STATUSES)
+            .eq('engine_type', 'SWING')
             .order('created_at', { ascending: false }),
           supabase
             .from('live_positions')
