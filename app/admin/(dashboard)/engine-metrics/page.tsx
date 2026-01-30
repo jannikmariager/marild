@@ -84,6 +84,7 @@ export default function EngineMetricsPage() {
   const [heartbeat, setHeartbeat] = useState<HeartbeatStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [now, setNow] = useState<Date | null>(null)
 
   useEffect(() => {
     async function fetchMetrics() {
@@ -104,6 +105,9 @@ export default function EngineMetricsPage() {
     }
 
     fetchMetrics()
+    setNow(new Date())
+    const id = setInterval(() => setNow(new Date()), 30000)
+    return () => clearInterval(id)
   }, [])
 
   if (loading) {
@@ -134,6 +138,7 @@ export default function EngineMetricsPage() {
 
   const getEngineLabel = (engine: EngineMetric) => engine.display_label || engine.engine_version
   const heartbeatFailures = heartbeat?.results?.filter((r) => !r.ok) ?? []
+  const signalsHeartbeat = heartbeat?.results?.find((r) => r.name === 'signals_fresh') ?? null
   const visibleShadowEngines = shadowEngines.filter(
     (engine) => !HIDDEN_SHADOW_VERSIONS.has((engine.engine_version || '').toUpperCase()),
   )
@@ -196,7 +201,14 @@ export default function EngineMetricsPage() {
                     : `${heartbeatFailures.length} check${heartbeatFailures.length === 1 ? '' : 's'} failing`}
                 </span>
               </div>
-              <div className="grid gap-2 md:grid-cols-2">
+              <div className="mt-2 text-xs text-muted-foreground">
+                <SignalsFreshExplainer
+                  now={now}
+                  signalsResult={signalsHeartbeat}
+                />
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-2 mt-3">
                 {heartbeat.results?.map((result) => (
                   <div
                     key={result.name}
@@ -424,5 +436,83 @@ export default function EngineMetricsPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function getNextFirstSignalUtc(now: Date): Date | null {
+  // First scheduled signals_generate_1h run: 15:05 UTC on weekdays (Mon–Fri).
+  const utcYear = now.getUTCFullYear()
+  const utcMonth = now.getUTCMonth()
+  const utcDate = now.getUTCDate()
+  const utcDow = now.getUTCDay() // 0=Sun..6=Sat
+
+  const todayFirst = new Date(Date.UTC(utcYear, utcMonth, utcDate, 15, 5, 0, 0))
+
+  const isWeekday = utcDow >= 1 && utcDow <= 5
+  if (isWeekday && todayFirst.getTime() > now.getTime()) {
+    return todayFirst
+  }
+
+  // Otherwise, move to next weekday's 15:05 UTC
+  let addDays = 1
+  if (utcDow === 5) addDays = 3 // Fri -> Mon
+  else if (utcDow === 6) addDays = 2 // Sat -> Mon
+  else if (utcDow === 0) addDays = 1 // Sun -> Mon
+
+  return new Date(Date.UTC(utcYear, utcMonth, utcDate + addDays, 15, 5, 0, 0))
+}
+
+function formatCountdown(msUntil: number | null): string {
+  if (msUntil === null) return ''
+  if (msUntil <= 0) return 'running now'
+  const totalMinutes = Math.round(msUntil / 60000)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours <= 0) return `${minutes} min`
+  return `${hours}h ${minutes}m`
+}
+
+function SignalsFreshExplainer({
+  now,
+  signalsResult,
+}: {
+  now: Date | null
+  signalsResult: HeartbeatResult | null
+}) {
+  if (!signalsResult) return null
+
+  const isOk = signalsResult.ok
+  const details = signalsResult.details ?? ''
+
+  // Extract age_minutes from details when present (e.g. "age_minutes=1135").
+  const ageMatch = details.match(/age_minutes=(\d+)/)
+  const ageMinutes = ageMatch ? parseInt(ageMatch[1], 10) : null
+
+  const nextUtc = now ? getNextFirstSignalUtc(now) : null
+  const msUntil = nextUtc ? nextUtc.getTime() - Date.now() : null
+
+  const nextUtcLabel = nextUtc
+    ? nextUtc.toISOString().slice(11, 16) + ' UTC'
+    : '15:05 UTC'
+
+  return (
+    <p>
+      <span className="font-semibold">Signals freshness: </span>
+      Uses the newest <code>ai_signals</code> row and expects it to be less than 3 hours old.
+      {' '}
+      {!isOk && ageMinutes !== null && (
+        <span>
+          Current age is about {ageMinutes} minutes.
+          {' '}
+        </span>
+      )}
+      Before the first signal batch of the session (scheduled around {nextUtcLabel}) this check will
+      often be red even though the pipeline is healthy.
+      {msUntil !== null && (
+        <span>
+          {' '}Next first signal batch in {formatCountdown(msUntil)}.
+        </span>
+      )}
+    </p>
   )
 }
