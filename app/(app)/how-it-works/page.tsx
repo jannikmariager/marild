@@ -20,6 +20,115 @@ export default function HowItWorksPage() {
           </p>
         </div>
 
+        {/* How our trading signals are created */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-6 w-6 text-emerald-600" />
+              <CardTitle>How our trading signals are created</CardTitle>
+            </div>
+            <CardDescription>
+              A deterministic, market-aware pipeline that turns live price data into complete trade plans.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6 text-sm text-muted-foreground">
+            <div>
+              <p className="font-medium text-foreground mb-1">In short</p>
+              <p>
+                Our system scans the market regularly during the trading day, looks for clear directional
+                moves backed by trend and volatility, and only publishes signals when the data supports a
+                well-defined trade plan.
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-4 space-y-2">
+              <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                <Shield className="h-4 w-4 text-emerald-600" />
+                1. Built on live market data
+              </h3>
+              <p>
+                We continuously monitor live price data for all supported stocks during market hours. If data
+                for a stock is incomplete, delayed, or unreliable, it is automatically skipped — we never
+                generate signals on questionable prices.
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-4 space-y-2">
+              <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                <Clock className="h-4 w-4 text-blue-600" />
+                2. Signals are generated throughout the trading day
+              </h3>
+              <p>
+                Several times during the US market session, our engine reviews the latest price action across
+                multiple time horizons. This ensures signals are based on current conditions, not yesterday&apos;s
+                market.
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-4 space-y-2">
+              <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                <Target className="h-4 w-4 text-purple-600" />
+                3. Direction and context matter
+              </h3>
+              <p>
+                For each potential setup, the system evaluates short-term price movement, higher-timeframe
+                trend direction, and current market volatility. Signals that align with the broader trend and
+                show strong momentum are scored higher. Counter-trend ideas are treated as higher risk and
+                clearly labeled as such.
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-4 space-y-2">
+              <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                4. Every signal comes with a full trade plan
+              </h3>
+              <p>
+                When a signal is published, it always includes direction (long or short), entry level, stop
+                loss, two profit targets, a confidence score, and a correction-risk estimate. Nothing is left
+                open-ended — you see the full plan upfront.
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-4 space-y-2">
+              <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                <Timer className="h-4 w-4 text-orange-600" />
+                5. Market-aware execution
+              </h3>
+              <p>
+                Signals created outside main trading hours are marked as watchlist ideas. Once the main session
+                opens, new signals become active and eligible for execution. This prevents trades from
+                triggering in illiquid or unstable market conditions.
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-4 space-y-2">
+              <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                <Cpu className="h-4 w-4 text-slate-600" />
+                6. Human-readable explanations (AI-assisted)
+              </h3>
+              <p>
+                After the signal is generated, a separate AI layer adds a clear explanation of why the setup
+                exists, what the risk is, and what would invalidate the trade. The trade logic itself is
+                deterministic — AI is used only to explain, not decide.
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-4 space-y-2">
+              <h3 className="font-semibold text-foreground text-sm">What this means for you</h3>
+              <ul className="list-disc list-inside space-y-1">
+                <li>No forced trades</li>
+                <li>No signals during dead market hours</li>
+                <li>Clear risk levels on every idea</li>
+                <li>Transparent confidence and risk scoring</li>
+              </ul>
+              <p className="mt-1">
+                If there is no quality setup, there is simply no signal.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* What We Trade */}
         <Card>
           <CardHeader>
@@ -118,15 +227,17 @@ export default function HowItWorksPage() {
               <div className="space-y-2">
                 <h4 className="font-semibold">Signal Generation</h4>
                 <p className="text-sm text-muted-foreground">
-                  Our AI analyzes markets <strong>24/7</strong> and generates signals when high-probability
-                  setups are detected. Signals are validated in real-time before publication.
+                  Signals are generated on a fixed schedule during US market hours — typically once per hour
+                  during the core session. Each sweep looks at fresh price data and only publishes a signal
+                  when the trend, volatility, and risk/reward all line up.
                 </p>
               </div>
               <div className="space-y-2">
                 <h4 className="font-semibold">Trade Execution</h4>
                 <p className="text-sm text-muted-foreground">
-                  Trades are executed during <strong>US market hours</strong> when liquidity is optimal.
-                  Our system continuously monitors positions and adjusts stops/targets dynamically.
+                  Trades are executed during <strong>US market hours</strong> when liquidity is most reliable.
+                  The engine respects a trade gate, so ideas generated outside the main session stay as
+                  watchlist items until conditions are suitable for execution.
                 </p>
               </div>
             </div>
