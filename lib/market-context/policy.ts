@@ -73,7 +73,8 @@ export function deriveContextRegime(
   const reasons: string[] = [];
 
   const vix = coerceNumber(snapshot.vix ?? snapshot.vixPercentile);
-  const gapAbs = Math.abs(coerceNumber(snapshot.futuresGapPct));
+  const gapRaw = coerceNumber(snapshot.futuresGapPct);
+  const gapAbs = gapRaw === null ? null : Math.abs(gapRaw);
   const breadth = coerceNumber(snapshot.breadthRiskOffScore);
 
   let regime: MarketContextRegime = 'normal';
