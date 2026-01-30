@@ -170,7 +170,15 @@ export function SwingContextShadowEngine() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-emerald-50 rounded-lg border border-emerald-200 p-6">
-          <h3 className="text-sm font-semibold text-emerald-900 mb-2">Market context policy</h3>
+          <h3 className="text-sm font-semibold text-emerald-900 mb-2">Market context shadow engine</h3>
+          <p className="text-xs text-emerald-900/80 mb-3">
+            SWING Context Shadow V1 is a virtual copy of the live SWING engine that never places real trades.
+            It uses the same signals and prices as live, but a daily market-context policy (VIX, futures gaps,
+            and breadth) can slow it down, shrink risk, or fully close the trade gate when conditions look
+            dangerous. Because it started from the same equity as live SWING, you can compare performance
+            one-to-one without touching the real journal.
+          </p>
+          <h3 className="text-sm font-semibold text-emerald-900 mb-2">Market context policy (CTX_V1_MINIMAL)</h3>
           {policy ? (
             <dl className="text-sm space-y-1">
               <div className="flex justify-between">

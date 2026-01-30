@@ -18,6 +18,7 @@ const navigation = [
   { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { name: 'Engine Metrics', href: '/admin/engine-metrics', icon: Cpu },
   { name: '  └ SWING_V2_ROBUST', href: '/admin/engine-metrics/swing-v2-robust', icon: Cpu },
+  { name: '  └ SWING Context Shadow V1', href: '/admin/engine-metrics/swing-shadow-ctx-v1', icon: Cpu },
   { name: '  └ Crypto V1', href: '/admin/engine-metrics/crypto-v1-shadow', icon: Cpu },
   { name: '  └ QUICK_PROFIT_V1', href: '/admin/engine-metrics/quick-profit', icon: Cpu },
   { name: 'Engine Performance', href: '/admin/engines', icon: TrendingUp },
