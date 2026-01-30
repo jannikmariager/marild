@@ -13,6 +13,7 @@ const LABEL_OVERRIDES: Record<string, string> = {
   SWING_V1_12_15DEC: 'SWING_V1_12_15DEC',
   SCALP_V1_MICROEDGE: 'SCALP_V1_MICROEDGE',
   QUICK_PROFIT_V1: 'Quick profit shadow engine',
+  SWING_SHADOW_CTX_V1: 'SWING Context Shadow V1',
   v1: 'Crypto V1', // crypto shadow uses engine_version = 'v1'
 }
 
