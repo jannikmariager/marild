@@ -234,7 +234,7 @@ export async function GET(request: NextRequest) {
     // Fetch all engine versions (PRIMARY and SHADOW)
     const { data: engineVersions, error: versionsError } = await supabase
       .from('engine_versions')
-      .select('*')
+      .select('*, settings')
       .order('created_at', { ascending: false })
 
     if (versionsError) {
@@ -649,6 +649,12 @@ export async function GET(request: NextRequest) {
 
       // Fetch engine parameters if applicable
       let engineParams: any = {}
+
+      // Attach brakes config from engine_versions.settings when present
+      const rawSettings = (version as any).settings || null
+      if (rawSettings && typeof rawSettings === 'object' && (rawSettings as any).brakes) {
+        engineParams.brakes = (rawSettings as any).brakes
+      }
       
       if ((sourceEngineVersion || '').toUpperCase() === 'SCALP_V1_MICROEDGE') {
         // Always start with defaults

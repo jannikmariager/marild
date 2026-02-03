@@ -253,26 +253,108 @@ async function postDailyReport(stats: DailyStats, date: Date) {
   const pnlEmoji = stats.total_pnl >= 0 ? '📈' : '📉';
   const pnlColor = stats.total_pnl >= 0 ? 0x00ff00 : 0xff0000;
 
+  // Optional: enrich with brakes state for live SWING and SHADOW_BRAKES_V1
+  let brakesLine = '';
+  try {
+    // Discover current PRIMARY SWING engine version so the report stays correct
+    let liveEngineVersion = 'SWING_V1_EXPANSION';
+    const { data: liveEngine, error: liveEngineError } = await supabase
+      .from('engine_versions')
+      .select('engine_version')
+      .eq('engine_key', 'SWING')
+      .eq('run_mode', 'PRIMARY')
+      .eq('is_enabled', true)
+      .is('stopped_at', null)
+      .order('created_at', { ascending: false })
+      .maybeSingle();
+
+    if (!liveEngineError && liveEngine?.engine_version) {
+      liveEngineVersion = liveEngine.engine_version as string;
+    }
+
+    // Live SWING PRIMARY brakes state
+    const { data: liveState, error: liveStateError } = await supabase
+      .from('engine_daily_state')
+      .select('state,daily_pnl,trades_count,throttle_factor,halt_reason,updated_at,trading_day')
+      .eq('engine_key', 'SWING')
+      .eq('engine_version', liveEngineVersion)
+      .order('trading_day', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (liveStateError) {
+      console.warn('[daily_report] Failed to load live brakes state:', liveStateError.message ?? liveStateError);
+    }
+
+    // Shadow brakes engine state
+    const { data: shadowState, error: shadowStateError } = await supabase
+      .from('engine_daily_state')
+      .select('state,daily_pnl,trades_count,throttle_factor,halt_reason,updated_at,trading_day')
+      .eq('engine_key', 'SWING')
+      .eq('engine_version', 'SHADOW_BRAKES_V1')
+      .order('trading_day', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (shadowStateError) {
+      console.warn('[daily_report] Failed to load shadow brakes state:', shadowStateError.message ?? shadowStateError);
+    }
+
+    const parts: string[] = [];
+    if (liveState) {
+      const liveStateLabel = String((liveState as any).state || 'NORMAL');
+      const livePnl = Number((liveState as any).daily_pnl ?? 0).toFixed(0);
+      const liveTrades = Number((liveState as any).trades_count ?? 0);
+      const tf = Number((liveState as any).throttle_factor ?? 1);
+      const tfLabel = tf < 1 ? `${(tf * 100).toFixed(0)}% size` : '100% size';
+      parts.push(`Live SWING (${liveEngineVersion}): **${liveStateLabel}** | PnL $${livePnl} | trades ${liveTrades} | ${tfLabel}`);
+    }
+    if (shadowState) {
+      const shStateLabel = String((shadowState as any).state || 'NORMAL');
+      const shPnl = Number((shadowState as any).daily_pnl ?? 0).toFixed(0);
+      const shTrades = Number((shadowState as any).trades_count ?? 0);
+      const shCap = 25; // from SHADOW_BRAKES_V1 config
+      const shReason = (shadowState as any).halt_reason ? ` (${(shadowState as any).halt_reason})` : '';
+      parts.push(`Shadow Brakes: **${shStateLabel}**${shReason} | PnL $${shPnl} | trades ${shTrades}/${shCap}`);
+    }
+
+    if (parts.length > 0) {
+      brakesLine = parts.join('\\n');
+    }
+  } catch (e) {
+    console.warn('[daily_report] Failed to load brakes state for Discord report:', (e as any)?.message ?? e);
+  }
+
+  const fields: any[] = [
+    {
+      name: "📊 Today's Activity",
+      value: `**Trades:** ${stats.total_trades}\n**Wins:** ${stats.wins} | **Losses:** ${stats.losses}\n**Open Positions:** ${stats.open_positions}`,
+      inline: false,
+    },
+    {
+      name: "💰 Performance",
+      value: `**Win Rate:** ${stats.win_rate.toFixed(1)}%\n**Daily P&L:** ${stats.total_pnl >= 0 ? '+' : ''}$${stats.total_pnl.toFixed(2)}\n**Total Return:** ${stats.total_pnl_pct >= 0 ? '+' : ''}${stats.total_pnl_pct.toFixed(2)}%`,
+      inline: true,
+    },
+    {
+      name: "📉 Risk Metrics",
+      value: `**Max Drawdown:** ${stats.drawdown_pct.toFixed(2)}%`,
+      inline: true,
+    },
+  ];
+
+  if (brakesLine) {
+    fields.push({
+      name: "🛑 Brakes State",
+      value: brakesLine,
+      inline: false,
+    });
+  }
+
   const embed = {
     title: `${pnlEmoji} Daily Trading Report - ${dateStr}`,
     color: pnlColor,
-    fields: [
-      {
-        name: "📊 Today's Activity",
-        value: `**Trades:** ${stats.total_trades}\n**Wins:** ${stats.wins} | **Losses:** ${stats.losses}\n**Open Positions:** ${stats.open_positions}`,
-        inline: false,
-      },
-      {
-        name: "💰 Performance",
-        value: `**Win Rate:** ${stats.win_rate.toFixed(1)}%\n**Daily P&L:** ${stats.total_pnl >= 0 ? '+' : ''}$${stats.total_pnl.toFixed(2)}\n**Total Return:** ${stats.total_pnl_pct >= 0 ? '+' : ''}${stats.total_pnl_pct.toFixed(2)}%`,
-        inline: true,
-      },
-      {
-        name: "📉 Risk Metrics",
-        value: `**Max Drawdown:** ${stats.drawdown_pct.toFixed(2)}%`,
-        inline: true,
-      },
-    ],
+    fields,
     footer: {
       text: "Marild AI • Live Trading • Not financial advice",
     },

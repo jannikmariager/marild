@@ -152,6 +152,87 @@ export default function EngineMetricsPage() {
         </p>
       </div>
 
+      {/* Engine parameter overview */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Engine Parameters Overview</CardTitle>
+          <CardDescription>
+            High-level trading rules for the live SWING engine and each shadow engine.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 text-sm">
+          {/* Live SWING (PRIMARY) */}
+          <div className="space-y-1">
+            <h3 className="font-semibold">Live SWING (PRIMARY)</h3>
+            <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+              <li>Baseline account: <span className="font-medium">$100,000</span> virtual equity.</li>
+              <li>Risk per trade: <span className="font-medium">0.75% of equity</span>.</li>
+              <li>Max per position: <span className="font-medium">25%</span> of equity; up to <span className="font-medium">10</span> positions.</li>
+              <li>Max portfolio allocation: <span className="font-medium">80%</span> of equity; minimum ticket <span className="font-medium">$1,000</span>.</li>
+              <li>Trailing stop: activates around <span className="font-medium">+1.5R</span>, trails by <span className="font-medium">0.75R</span>.</li>
+              <li>Soft brakes: from roughly <span className="font-medium">+$800</span> daily P&amp;L, risk per trade throttled to ≈<span className="font-medium">30%</span> of normal size (no hard halt).</li>
+            </ul>
+          </div>
+
+          {/* SWING_V2_ROBUST */}
+          <div className="space-y-1">
+            <h3 className="font-semibold">SWING_V2_ROBUST (shadow)</h3>
+            <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+              <li>Same base sizing as live SWING (0.75% risk, 25% per position, 80% portfolio).</li>
+              <li>Trailing stop: activates around <span className="font-medium">+1.0R</span>, trails by <span className="font-medium">0.5R</span>.</li>
+              <li>Sideways time-exit: more aggressive exit around <span className="font-medium">+0.4R</span> into the close.</li>
+              <li>Overnight hygiene: partial close, SL to breakeven, ATR-based runner trail.</li>
+            </ul>
+          </div>
+
+          {/* SWING Context Shadow V1 */}
+          <div className="space-y-1">
+            <h3 className="font-semibold">SWING CTX V1 (shadow)</h3>
+            <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+              <li>Same base SWING sizing as live engine.</li>
+              <li>Market-context policy (<code>CTX_V1_MINIMAL</code>) can open/close the trade gate.</li>
+              <li>Policy can scale risk per trade and cap max concurrent positions.</li>
+              <li>Used to compare regime-aware gating versus baseline live engine.</li>
+            </ul>
+          </div>
+
+          {/* Quick profit shadow engine */}
+          <div className="space-y-1">
+            <h3 className="font-semibold">Quick profit V1 (shadow)</h3>
+            <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+              <li>Risk model: ≈<span className="font-medium">0.75%</span> per trade, 25% per position, 80% portfolio, max 10 positions.</li>
+              <li>Break-even trigger around <span className="font-medium">+$150</span> open P&amp;L (move SL to breakeven + buffer).</li>
+              <li>Partial profit trigger around <span className="font-medium">+$250</span> (close ~50% of size, keep runner).</li>
+              <li>USD-based trailing stop to lock in open profits on the remaining shares.</li>
+            </ul>
+          </div>
+
+          {/* Crypto V1 shadow engine */}
+          <div className="space-y-1">
+            <h3 className="font-semibold">Crypto V1 (shadow)</h3>
+            <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+              <li>Universe: BTC, ETH, SOL, ADA, MATIC (USD pairs by default).</li>
+              <li>Primary timeframe: <span className="font-medium">15m</span> candles.</li>
+              <li>Risk per trade: <span className="font-medium">0.3% of equity</span>; up to <span className="font-medium">3</span> positions.</li>
+              <li>Max daily drawdown: <span className="font-medium">2%</span> of equity.</li>
+              <li>Filters: minimum ATR ≈0.3% and maximum spread ≈0.4% of price, plus fees/slippage baked in.</li>
+            </ul>
+          </div>
+
+          {/* SWING Brakes V1 shadow engine */}
+          <div className="space-y-1">
+            <h3 className="font-semibold">SWING Brakes V1 (shadow)</h3>
+            <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+              <li>Cloned from baseline SWING sizing (0.75% risk, 25% position cap, 80% portfolio cap).</li>
+              <li>Soft throttle at <span className="font-medium">+$800</span> daily P&amp;L → risk scaled to ≈<span className="font-medium">30%</span>.</li>
+              <li>Hard profit lock at <span className="font-medium">+$1,500</span> (halts new entries for the day).</li>
+              <li>Max daily loss: <span className="font-medium">−$500</span> (halts new entries).</li>
+              <li>Max trades per day: <span className="font-medium">25</span> trades per trading day.</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Routing Flow (cheatsheet)</CardTitle>

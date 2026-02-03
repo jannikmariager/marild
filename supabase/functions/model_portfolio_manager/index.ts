@@ -3,6 +3,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { fetchBulkQuotes, fetchIntradayOHLC, fetchPositionBars } from "../_shared/yahoo_v8_client.ts";
 import { isDaytraderDisabled, logEngineConfigOnce, getCryptoShadowConfig } from "../_shared/config.ts";
+import { getTradingDayET, loadEngineBrakesConfig, getOrInitDailyState, computeLiveDecision, computeShadowDecision, upsertDailyState } from "../_shared/engine_brakes.ts";
 import {
   AllocationFlags,
   loadAllocationFlags,
@@ -277,6 +278,8 @@ async function runShadowEngine(ctx: EngineContext, supabase: any) {
 
   console.log(`[shadow] Starting shadow engine run for ${ctx.engineVersion}`);
 
+  const tradingDay = getTradingDayET(ctx.nowUtc);
+
   // 1. Ensure a portfolio row exists
   const { data: existingPortfolios, error: portfolioErr } = await supabase
     .from('engine_portfolios')
@@ -378,6 +381,63 @@ async function runShadowEngine(ctx: EngineContext, supabase: any) {
   const equity = Number(portfolio.starting_equity || 100000) + realizedPnl + unrealizedPnl;
   const cash = equity - allocatedNotional - unrealizedPnl;
 
+  // --- Brakes: SHADOW_BRAKES_V1 full state machine ---
+  let shadowThrottleFactor = 1;
+  let shadowStateLabel = 'NORMAL' as 'NORMAL' | 'THROTTLED' | 'HALTED_PROFIT' | 'HALTED_LOSS' | 'HALTED_TRADES';
+
+  try {
+    const brakesConfig = await loadEngineBrakesConfig(supabase, ctx.engineKey, ctx.engineVersion);
+    const dailyState = await getOrInitDailyState(supabase, ctx.engineKey, ctx.engineVersion, tradingDay, 1);
+
+    // Approximate daily PnL as equity - starting_equity (per trading day snapshot)
+    const dailyPnl = equity - Number(portfolio.starting_equity || 100000);
+    dailyState.daily_pnl = dailyPnl;
+
+    // Count trades today for this shadow engine (by closed_at day window)
+    const startIso = `${tradingDay}T00:00:00Z`;
+    const nextDay = new Date(startIso);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    const endIso = nextDay.toISOString();
+
+    const { data: todaysTrades, error: todaysErr } = await supabase
+      .from('engine_trades')
+      .select('id')
+      .eq('engine_key', ctx.engineKey)
+      .eq('engine_version', ctx.engineVersion)
+      .eq('run_mode', ctx.runMode)
+      .gte('closed_at', startIso)
+      .lt('closed_at', endIso);
+
+    if (todaysErr) {
+      console.warn('[shadow][brakes] Failed to load todays engine_trades:', todaysErr.message ?? todaysErr);
+    }
+
+    const tradesCount = (todaysTrades || []).length;
+    dailyState.trades_count = tradesCount;
+
+    const decision = computeShadowDecision(dailyState, brakesConfig);
+    shadowThrottleFactor = decision.throttleFactor;
+    shadowStateLabel = decision.state;
+
+    await upsertDailyState(supabase, ctx.engineKey, ctx.engineVersion, tradingDay, {
+      state: decision.state,
+      daily_pnl: dailyPnl,
+      trades_count: tradesCount,
+      throttle_factor: decision.throttleFactor,
+      halt_reason: decision.haltReason ?? null,
+    });
+
+    if (decision.state !== 'NORMAL') {
+      console.log(
+        `[shadow][brakes] ${ctx.engineVersion} state=${decision.state} ` +
+          `pnl=$${dailyPnl.toFixed(2)} trades=${tradesCount} factor=${decision.throttleFactor.toFixed(2)} ` +
+          (decision.haltReason ? `reason=${decision.haltReason}` : ''),
+      );
+    }
+  } catch (shadowBrakeErr) {
+    console.warn('[shadow][brakes] Error evaluating brakes for', ctx.engineVersion, ':', (shadowBrakeErr as any)?.message ?? shadowBrakeErr);
+  }
+
   // Optionally load latest market context decision for context shadow engine.
   let marketContextDecision: any | null = null;
   if (ctx.engineKey === 'SWING' && ctx.engineVersion === 'SWING_SHADOW_CTX_V1') {
@@ -459,6 +519,10 @@ async function runShadowEngine(ctx: EngineContext, supabase: any) {
     console.log(
       `[shadow] ${ctx.engineVersion}: Trade gate CLOSED by market context (as_of=${marketContextDecision.as_of}). Skipping new entries.`,
     );
+  } else if (shadowStateLabel === 'HALTED_PROFIT' || shadowStateLabel === 'HALTED_LOSS' || shadowStateLabel === 'HALTED_TRADES') {
+    console.log(
+      `[shadow][brakes] ${ctx.engineVersion}: State=${shadowStateLabel} for trading_day=${tradingDay} – skipping new entries.`,
+    );
   } else {
     const { data: newSignals, error: signalErr } = await fetchSignalsWithAllowlist(
       supabase,
@@ -479,7 +543,15 @@ async function runShadowEngine(ctx: EngineContext, supabase: any) {
 
     // 7. Process new signals (with promotion gating for V2)
     if (newSignals && newSignals.length > 0) {
-      await processShadowSignals(ctx, supabase, config, newSignals as any, state);
+      // For SHADOW_BRAKES_V1, apply throttle factor to risk_per_trade_pct
+      const effectiveConfig = { ...config };
+      if (ctx.engineVersion === 'SHADOW_BRAKES_V1' && shadowStateLabel === 'THROTTLED') {
+        effectiveConfig.risk_per_trade_pct = Number(
+          (effectiveConfig.risk_per_trade_pct * shadowThrottleFactor).toFixed(6),
+        );
+      }
+
+      await processShadowSignals(ctx, supabase, effectiveConfig, newSignals as any, state);
     }
   }
 
@@ -908,8 +980,66 @@ async function processStrategy(ctx: EngineContext, supabase: any, config: any) {
   );
   console.log(`  Open positions: ${openCount}`);
 
-  // 3. Update positions and check exits
+  // --- Brakes: live SWING soft throttle (risk scaling) ---
+  let brakesThrottleFactor = 1;
+  let brakesStateLabel = 'NORMAL';
+
   const now = new Date();
+
+  if (ctx.runMode === 'PRIMARY' && config.strategy === 'SWING') {
+    try {
+      const tradingDay = getTradingDayET(now);
+      const dailyPnl = state.equity_dollars - config.initial_equity;
+
+      // Count closed trades today (realized P&L rows)
+      const { data: todaysTrades, error: todaysError } = await supabase
+        .from('live_trades')
+        .select('id')
+        .eq('strategy', 'SWING')
+        .eq('realized_pnl_date', tradingDay);
+
+      if (todaysError) {
+        console.warn('[brakes] Failed to load today\'s live_trades for SWING:', todaysError.message ?? todaysError);
+      }
+
+      const tradesCount = (todaysTrades || []).length;
+
+      const brakesConfig = await loadEngineBrakesConfig(supabase, ctx.engineKey, ctx.engineVersion);
+      const dailyState = await getOrInitDailyState(
+        supabase,
+        ctx.engineKey,
+        ctx.engineVersion,
+        tradingDay,
+        1,
+      );
+
+      dailyState.daily_pnl = dailyPnl;
+      dailyState.trades_count = tradesCount;
+
+      const decision = computeLiveDecision(dailyState, brakesConfig);
+      brakesThrottleFactor = decision.throttleFactor;
+      brakesStateLabel = decision.state;
+
+      await upsertDailyState(supabase, ctx.engineKey, ctx.engineVersion, tradingDay, {
+        state: decision.state,
+        daily_pnl: dailyPnl,
+        trades_count: tradesCount,
+        throttle_factor: decision.throttleFactor,
+        halt_reason: null,
+      });
+
+      if (decision.state === 'THROTTLED') {
+        console.log(
+          `[brakes] LIVE SWING soft throttle engaged for ${tradingDay}: ` +
+            `daily_pnl=$${dailyPnl.toFixed(2)} factor=${decision.throttleFactor.toFixed(2)}`,
+        );
+      }
+    } catch (brakeErr) {
+      console.warn('[brakes] Error evaluating live SWING brakes:', (brakeErr as any)?.message ?? brakeErr);
+    }
+  }
+
+  // 3. Update positions and check exits
   const updatedState = await updatePositionsAndCheckExits(
     ctx,
     supabase,
@@ -1031,6 +1161,7 @@ async function processStrategy(ctx: EngineContext, supabase: any, config: any) {
         tradeGate,
         allocationCtx,
         portfolioGuard,
+        brakesThrottleFactor,
       );
     }
   }
@@ -2524,8 +2655,29 @@ async function processNewSignals(
   tradeGate?: TradeGateStatus,
   allocationCtx?: AllocationContext | null,
   portfolioGuard?: PortfolioBucketGuard | null,
+  brakesThrottleFactor: number = 1,
 ) {
   console.log(`  Processing ${signals.length} signals...`);
+
+  // Live SWING soft brakes: scale risk_per_trade_pct when throttled
+  const isLiveSwing = ctx.runMode === 'PRIMARY' && config.strategy === 'SWING';
+  const effectiveConfig =
+    isLiveSwing && brakesThrottleFactor !== 1
+      ? {
+          ...config,
+          risk_per_trade_pct: Number(
+            (config.risk_per_trade_pct * brakesThrottleFactor).toFixed(6),
+          ),
+        }
+      : config;
+
+  if (isLiveSwing && brakesThrottleFactor !== 1) {
+    console.log(
+      `[brakes] Using throttled risk_per_trade_pct=${
+        (effectiveConfig.risk_per_trade_pct * 100).toFixed(3)
+      }% (base=${(config.risk_per_trade_pct * 100).toFixed(3)}%, factor=${brakesThrottleFactor.toFixed(2)})`,
+    );
+  }
   const gateMeta = {
     tradeGateAllowed: tradeGate?.allowed ?? null,
     tradeGateReason: tradeGate?.reason ?? null,
@@ -2756,8 +2908,8 @@ async function processNewSignals(
       continue;
     }
 
-    // Calculate position size
-    const positionSize = calculatePositionSize(config, signal, state);
+    // Calculate position size (respecting any live SWING throttle)
+    const positionSize = calculatePositionSize(effectiveConfig, signal, state);
 
     if (positionSize === null) {
       console.log(
