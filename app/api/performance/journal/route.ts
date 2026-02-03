@@ -171,7 +171,28 @@ export async function GET(request: Request) {
       0,
     )
 
-    // Build per-day realized/unrealized/equity series
+    // Since-inception realized PnL should include the *full* trade history for this strategy,
+    // not just the lookback window used for the calendar. Align this with the admin engine
+    // metrics implementation so the Trading Journal "Since inception" number matches the
+    // live portfolio view.
+    const { data: allClosedTrades, error: allClosedError } = await supabase
+      .from('live_trades')
+      .select('realized_pnl_dollars')
+      .eq('strategy', strategy)
+      .not('realized_pnl_dollars', 'is', null)
+
+    if (allClosedError) {
+      console.error('[performance/journal] Error fetching full closed trade history:', allClosedError)
+    }
+
+    const sinceInceptionRealizedFromTrades = (allClosedTrades || []).reduce(
+      (sum, row: any) => sum + Number(row.realized_pnl_dollars ?? 0),
+      0,
+    )
+
+    // Build per-day realized/unrealized/equity series for the *lookback window only*.
+    // This powers the calendar and daily detail views, but no longer controls the
+    // since-inception aggregates returned in totals.
     const { order: dayOrder, map: dailyMap } = buildDailySeries({
       startDate: since,
       endDate,
@@ -187,6 +208,8 @@ export async function GET(request: Request) {
     if (latestKey) {
       const latest = dailyMap.get(latestKey)
       if (latest) {
+        // For the most recent day in the lookback window, use the authoritative
+        // unrealized PnL from open positions so daily equity stays accurate.
         latest.unrealized = currentUnrealizedFromPositions
         latest.equity = STARTING_EQUITY + latest.cumulativeRealized + latest.unrealized
         dailyMap.set(latestKey, latest)
@@ -263,10 +286,13 @@ export async function GET(request: Request) {
     const daysList = dayOrder.map((key) => daySummariesMap.get(key)!).filter(Boolean)
 
     const latestDaily = latestKey ? dailyMap.get(latestKey) : null
-    const sinceInceptionRealized = latestDaily?.cumulativeRealized ?? 0
-    const currentUnrealized = latestDaily?.unrealized ?? 0
+
+    // Use full-history realized PnL for the since-inception aggregates so the
+    // Trading Journal matches the admin engine metrics and live portfolio views.
+    const sinceInceptionRealized = sinceInceptionRealizedFromTrades
+    const currentUnrealized = latestDaily?.unrealized ?? currentUnrealizedFromPositions
     const sinceInceptionTotal = sinceInceptionRealized + currentUnrealized
-    const currentEquity = latestDaily?.equity ?? (STARTING_EQUITY + sinceInceptionTotal)
+    const currentEquity = STARTING_EQUITY + sinceInceptionTotal
 
     return NextResponse.json({
       strategy,

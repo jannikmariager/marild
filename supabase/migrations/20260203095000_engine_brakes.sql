@@ -39,8 +39,25 @@ end;
 $$;
 
 -- 3) Seed SHADOW_BRAKES_V1 engine version (shadow SWING engine)
-insert into public.engine_versions (engine_key, engine_version, run_mode, asset_class, is_enabled, is_user_visible)
-select 'SWING', 'SHADOW_BRAKES_V1', 'SHADOW', 'stocks', true, true
+-- In production, engine_versions.version is a NOT NULL + UNIQUE text column.
+-- Use a descriptive, globally unique text value for this seed row.
+insert into public.engine_versions (
+  engine_key,
+  engine_version,
+  run_mode,
+  asset_class,
+  is_enabled,
+  is_user_visible,
+  "version"
+)
+select
+  'SWING',
+  'SHADOW_BRAKES_V1',
+  'SHADOW',
+  'stocks',
+  true,
+  true,
+  'SHADOW_BRAKES_V1_VERSION'
 where not exists (
   select 1 from public.engine_versions
   where engine_key = 'SWING'
