@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!url || !serviceKey) return { error: "Server not configured", client: null };
+  return { error: null, client: createClient(url, serviceKey) };
+}
 
 interface Row {
   version: string;
@@ -25,12 +28,16 @@ function styleForTimeframe(tfRaw: string): Style {
 }
 
 export async function GET() {
+  const { error: envError, client } = getSupabaseAdmin();
+  if (envError || !client) {
+    return NextResponse.json({ error: envError }, { status: 500 });
+  }
   // Fetch per-timeframe to avoid hitting PostgREST's 1k row cap
   const tfs = ['day', 'swing', 'invest'];
   const rows: Row[] = [] as any;
 
   for (const tf of tfs) {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('engine_comparison_results')
       .select('version,ticker,timeframe,pnl,win_rate,max_dd,avg_r')
       .eq('timeframe', tf)

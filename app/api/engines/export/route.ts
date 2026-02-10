@@ -1,25 +1,34 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!url || !serviceKey) {
+    return { error: 'Server not configured', client: null };
+  }
+  return { error: null, client: createClient(url, serviceKey) };
+}
 
 export async function GET(req: Request) {
+  const { error, client } = getSupabaseAdmin();
+  if (error || !client) {
+    return NextResponse.json({ error }, { status: 500 });
+  }
+
   const { searchParams } = new URL(req.url);
   const format = searchParams.get('format') ?? 'csv';
 
-  const { data, error } = await supabase
+  const { data, error: queryError } = await client
     .from('engine_comparison_results')
     .select('version,ticker,timeframe,pnl,win_rate,max_dd,avg_r')
     .range(0, 99999);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (queryError) {
+    return NextResponse.json({ error: queryError.message }, { status: 500 });
   }
 
   if (format === 'json') {
-    // simple JSON of rows (used by RegressionHeatmap via trade-dashboard backend normally)
     return NextResponse.json(data ?? []);
   }
 

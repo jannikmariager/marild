@@ -34,17 +34,17 @@ function requireWebhookSecret(): string {
 }
 type SubscriptionTier = 'pro' | 'expired';
 
-// Initialize Supabase with service role for admin operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!url || !serviceRole) {
+    return { error: 'Server not configured', client: null };
   }
-);
+  const client = createClient(url, serviceRole, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  return { error: null, client };
+}
 
 function mapStripeStatusToTier(status: Stripe.Subscription.Status): SubscriptionTier {
   const proStatuses: Stripe.Subscription.Status[] = ['active', 'trialing', 'past_due'];
@@ -52,16 +52,21 @@ function mapStripeStatusToTier(status: Stripe.Subscription.Status): Subscription
 }
 
 async function resolveAuthUser(email: string) {
+  const { error, client } = getSupabaseAdmin();
+  if (error || !client) {
+    console.error('[stripe webhook] Supabase not configured');
+    return null;
+  }
   try {
     const normalizedEmail = email.trim().toLowerCase();
-    const { data, error } = await supabase.auth.admin.listUsers({
+    const { data, error: listError } = await client.auth.admin.listUsers({
       page: 1,
       perPage: 1,
       email: normalizedEmail,
     } as any);
     const user = data?.users?.[0] ?? null;
-    if (error || !user) {
-      console.error('[stripe webhook] Could not resolve auth user for email', email, error);
+    if (listError || !user) {
+      console.error('[stripe webhook] Could not resolve auth user for email', email, listError);
       return null;
     }
     return user;
@@ -72,6 +77,11 @@ async function resolveAuthUser(email: string) {
 }
 
 async function syncSubscriptionState(email: string, tier: SubscriptionTier, context: string) {
+  const { error, client } = getSupabaseAdmin();
+  if (error || !client) {
+    console.error('[stripe webhook] Supabase not configured');
+    return;
+  }
   const authUser = await resolveAuthUser(email);
   if (!authUser) {
     console.warn(`[stripe webhook] ${context}: skipping because auth user was not found for ${email}`);
@@ -90,7 +100,7 @@ async function syncSubscriptionState(email: string, tier: SubscriptionTier, cont
     updated_at: nowIso,
   };
 
-  const { error: profileError } = await supabase
+  const { error: profileError } = await client
     .from('user_profile')
     .upsert(profilePayload, { onConflict: 'user_id' });
 
@@ -100,7 +110,7 @@ async function syncSubscriptionState(email: string, tier: SubscriptionTier, cont
   }
 
   // 2) Mirror into subscription_status helper table
-  const { error: subStatusError } = await supabase
+  const { error: subStatusError } = await client
     .from('subscription_status')
     .upsert(
       {
