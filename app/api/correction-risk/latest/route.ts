@@ -52,6 +52,15 @@ export async function OPTIONS(request: NextRequest) {
   return applyCorsHeaders(request, new NextResponse(null, { status: 204 }));
 }
 
+function getBearerToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
+  if (authHeader && /^Bearer\s+/i.test(authHeader)) {
+    return authHeader.replace(/^Bearer\s+/i, '').trim();
+  }
+  const supabaseHeader = request.headers.get('Supabase-Access-Token');
+  return supabaseHeader?.trim() ?? null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -60,15 +69,19 @@ export async function GET(request: NextRequest) {
     // Check DEV_FORCE_PRO
     const devForcePro = process.env.NEXT_PUBLIC_DEV_FORCE_PRO === 'true';
 
-    // Get session
-    const { data: session } = await supabase.auth.getSession();
+    // Determine auth token (prefer explicit bearer header, fallback to cookie-based session)
+    let authToken = getBearerToken(request);
+    if (!authToken) {
+      const { data: session } = await supabase.auth.getSession();
+      authToken = session.session?.access_token ?? null;
+    }
 
     try {
       // Call Supabase Edge Function
       const response = await fetch(`${supabaseUrl}/functions/v1/correction_risk_latest`, {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${session?.session?.access_token || ''}`,
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           'Content-Type': 'application/json',
         },
       });
