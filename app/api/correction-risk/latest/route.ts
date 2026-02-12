@@ -1,7 +1,58 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabaseServer';
 
-export async function GET() {
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://www.marild.com',
+  'https://marild.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:4173',
+  'http://localhost:5173',
+  'http://localhost:8080',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:4173',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:8080',
+];
+const PREVIEW_ORIGIN_SUFFIXES = ['.vercel.app'];
+const ALLOWED_METHODS = 'GET,OPTIONS';
+const ALLOWED_HEADERS = 'Authorization, Content-Type, Supabase-Access-Token';
+
+function parseEnvAllowedOrigins() {
+  return process.env.CORS_ALLOWED_ORIGINS?.split(',').map((value) => value.trim()).filter(Boolean);
+}
+
+function isOriginAllowed(origin: string) {
+  const envOrigins = parseEnvAllowedOrigins();
+  const whitelist = new Set([...DEFAULT_ALLOWED_ORIGINS, ...(envOrigins ?? [])]);
+  if (whitelist.has(origin)) {
+    return true;
+  }
+  return PREVIEW_ORIGIN_SUFFIXES.some((suffix) => origin.endsWith(suffix));
+}
+
+function applyCorsHeaders(request: NextRequest, response: NextResponse) {
+  const origin = request.headers.get('origin') ?? request.headers.get('Origin');
+  if (origin && isOriginAllowed(origin)) {
+    response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.append('Vary', 'Origin');
+    response.headers.set('Access-Control-Allow-Credentials', 'true');
+  }
+
+  response.headers.set('Access-Control-Allow-Methods', ALLOWED_METHODS);
+  response.headers.set('Access-Control-Allow-Headers', ALLOWED_HEADERS);
+  response.headers.set('Access-Control-Max-Age', '600');
+  return response;
+}
+
+function jsonWithCors(request: NextRequest, data: Record<string, unknown>, init?: ResponseInit) {
+  return applyCorsHeaders(request, NextResponse.json(data, init));
+}
+
+export async function OPTIONS(request: NextRequest) {
+  return applyCorsHeaders(request, new NextResponse(null, { status: 204 }));
+}
+
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -36,16 +87,17 @@ export async function GET() {
           status: response.status,
           body: data,
         });
-        return NextResponse.json(data, { status: 200 });
+        return jsonWithCors(request, data, { status: 200 });
       }
 
       // Return the response as-is (including error responses) in production
-      return NextResponse.json(data, { status: response.status });
+      return jsonWithCors(request, data, { status: response.status });
     } catch (fetchError) {
       console.error('[Correction Risk API] Error calling Edge Function:', fetchError);
-      
+
       // Return NO_DATA error - no mock data
-      return NextResponse.json(
+      return jsonWithCors(
+        request,
         {
           error: 'NO_DATA',
           message: 'No correction risk data available yet',
@@ -54,12 +106,13 @@ export async function GET() {
             has_pro_access: devForcePro,
           },
         },
-        { status: 404 }
+        { status: 404 },
       );
     }
   } catch (error) {
     console.error('Error fetching correction risk:', error);
-    return NextResponse.json(
+    return jsonWithCors(
+      request,
       {
         error: 'SERVER_ERROR',
         message: 'Failed to fetch correction risk data',
@@ -68,7 +121,7 @@ export async function GET() {
           has_pro_access: false,
         },
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

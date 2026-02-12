@@ -1,10 +1,61 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabaseServer';
 import { hasProAccess } from '@/lib/subscription/devOverride';
 import { buildDailySeries, type EquitySnapshotRow } from '@/lib/performance/dailySeries';
 import { INITIAL_EQUITY } from '@/lib/performance/metrics';
 
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://www.marild.com',
+  'https://marild.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:4173',
+  'http://localhost:5173',
+  'http://localhost:8080',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:4173',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:8080',
+];
+const PREVIEW_ORIGIN_SUFFIXES = ['.vercel.app'];
+const ALLOWED_METHODS = 'GET,OPTIONS';
+const ALLOWED_HEADERS = 'Authorization, Content-Type, Supabase-Access-Token';
+
+function parseEnvAllowedOrigins() {
+  return process.env.CORS_ALLOWED_ORIGINS?.split(',').map((value) => value.trim()).filter(Boolean);
+}
+
+function isOriginAllowed(origin: string) {
+  const envOrigins = parseEnvAllowedOrigins();
+  const whitelist = new Set([...DEFAULT_ALLOWED_ORIGINS, ...(envOrigins ?? [])]);
+  if (whitelist.has(origin)) {
+    return true;
+  }
+  return PREVIEW_ORIGIN_SUFFIXES.some((suffix) => origin.endsWith(suffix));
+}
+
+function applyCorsHeaders(request: NextRequest, response: NextResponse) {
+  const origin = request.headers.get('origin') ?? request.headers.get('Origin');
+  if (origin && isOriginAllowed(origin)) {
+    response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.append('Vary', 'Origin');
+    response.headers.set('Access-Control-Allow-Credentials', 'true');
+  }
+
+  response.headers.set('Access-Control-Allow-Methods', ALLOWED_METHODS);
+  response.headers.set('Access-Control-Allow-Headers', ALLOWED_HEADERS);
+  response.headers.set('Access-Control-Max-Age', '600');
+  return response;
+}
+
+function jsonWithCors(request: NextRequest, data: Record<string, unknown>, init?: ResponseInit) {
+  return applyCorsHeaders(request, NextResponse.json(data, init));
+}
+
 export const dynamic = 'force-dynamic';
+
+export async function OPTIONS(request: NextRequest) {
+  return applyCorsHeaders(request, new NextResponse(null, { status: 204 }));
+}
 
 /**
  * GET /api/performance/summary
@@ -12,7 +63,7 @@ export const dynamic = 'force-dynamic';
  * Pulls from live_trades and live_portfolio_state tables
  * PRO-only feature
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const isPublicPreview = url.searchParams.get('public') === '1';
@@ -43,7 +94,7 @@ export async function GET(request: Request) {
     }
 
     if (!hasAccess) {
-      return NextResponse.json({
+      return jsonWithCors(request, {
         starting_equity: 0,
         current_equity: 0,
         total_return_pct: 0,
@@ -69,9 +120,10 @@ export async function GET(request: Request) {
 
     if (tradesError) {
       console.error('[performance/summary] Error fetching trades:', tradesError);
-      return NextResponse.json(
+      return jsonWithCors(
+        request,
         { error: 'Failed to fetch trades data' },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -84,9 +136,10 @@ export async function GET(request: Request) {
 
     if (posError) {
       console.error('[performance/summary] Error fetching open positions:', posError);
-      return NextResponse.json(
+      return jsonWithCors(
+        request,
         { error: 'Failed to fetch open positions' },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -186,7 +239,7 @@ export async function GET(request: Request) {
     }
 
 
-    return NextResponse.json({
+    return jsonWithCors(request, {
       starting_equity,
       current_equity,
       total_return_pct: Math.round(total_return_pct * 100) / 100,
@@ -200,9 +253,10 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('[performance/summary] Unexpected error:', error);
-    return NextResponse.json(
+    return jsonWithCors(
+      request,
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
