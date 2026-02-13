@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { createClient } from "@supabase/supabase-js";
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://www.marild.com",
@@ -184,10 +184,16 @@ export async function GET(request: NextRequest) {
     return unauthorized(request);
   }
 
-  const { client: supabaseAdmin, error: adminError } = getSupabaseAdminClient();
-  if (!supabaseAdmin) {
-    return serverError(request, adminError ?? "Supabase admin client unavailable");
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
+    return serverError(request, "Supabase admin env vars missing");
   }
+
+  const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false },
+  });
 
   const {
     data: { user },
