@@ -6,9 +6,10 @@ const MAX_AGE = "600";
 
 function applyCors(request: NextRequest, response: NextResponse) {
   const origin = request.headers.get("origin") ?? "*";
-  response.headers.set("Access-Control-Allow-Origin", origin);
-  response.headers.set("Vary", "Origin");
-  response.headers.set("Access-Control-Allow-Credentials", "true");
+  response.headers.set("Access-Control-Allow-Origin", origin || "*");
+  if (origin) {
+    response.headers.set("Vary", "Origin");
+  }
   response.headers.set("Access-Control-Allow-Methods", ALLOWED_METHODS);
   response.headers.set("Access-Control-Allow-Headers", ALLOWED_HEADERS);
   response.headers.set("Access-Control-Max-Age", MAX_AGE);
