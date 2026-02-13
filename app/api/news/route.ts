@@ -3,6 +3,24 @@ import { createClient } from '@/lib/supabaseServer';
 
 // Default symbol for global market news (null = global)
 const DEFAULT_SYMBOL = null;
+const ALLOWED_METHODS = 'GET,OPTIONS';
+const ALLOWED_HEADERS = 'Authorization, Content-Type, Supabase-Access-Token';
+
+function applyCors(response: NextResponse, request: NextRequest) {
+  const origin = request.headers.get('origin') ?? '*';
+  response.headers.set('Access-Control-Allow-Origin', origin || '*');
+  if (origin) {
+    response.headers.set('Vary', 'Origin');
+  }
+  response.headers.set('Access-Control-Allow-Methods', ALLOWED_METHODS);
+  response.headers.set('Access-Control-Allow-Headers', ALLOWED_HEADERS);
+  response.headers.set('Access-Control-Max-Age', '600');
+  return response;
+}
+
+export async function OPTIONS(request: NextRequest) {
+  return applyCors(new NextResponse(null, { status: 204 }), request);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,9 +41,12 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Failed to fetch news with sentiment:', error);
-      return NextResponse.json(
-        { message: 'Failed to fetch news', error: error.message },
-        { status: 500 }
+      return applyCors(
+        NextResponse.json(
+          { message: 'Failed to fetch news', error: error.message },
+          { status: 500 }
+        ),
+        request,
       );
     }
 
@@ -41,17 +62,20 @@ export async function GET(request: NextRequest) {
       sentimentReason: article.sentiment_reason,
     }));
 
-    return NextResponse.json(articles, {
+    return applyCors(NextResponse.json(articles, {
       headers: {
         'Cache-Control': 'public, max-age=900, stale-while-revalidate=60', // 15 min cache
         'X-News-Cached': data.cached ? 'true' : 'false',
       },
-    });
+    }), request);
   } catch (error) {
     console.error('News API error:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
+    return applyCors(
+      NextResponse.json(
+        { message: 'Internal server error' },
+        { status: 500 }
+      ),
+      request,
     );
   }
 }

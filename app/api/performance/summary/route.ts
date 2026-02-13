@@ -6,6 +6,25 @@ import { INITIAL_EQUITY } from '@/lib/performance/metrics';
 
 export const dynamic = 'force-dynamic';
 
+const ALLOWED_METHODS = 'GET,OPTIONS';
+const ALLOWED_HEADERS = 'Authorization, Content-Type, Supabase-Access-Token';
+
+function applyCors(response: NextResponse, request: Request) {
+  const origin = request.headers.get('origin') ?? '*';
+  response.headers.set('Access-Control-Allow-Origin', origin || '*');
+  if (origin) {
+    response.headers.set('Vary', 'Origin');
+  }
+  response.headers.set('Access-Control-Allow-Methods', ALLOWED_METHODS);
+  response.headers.set('Access-Control-Allow-Headers', ALLOWED_HEADERS);
+  response.headers.set('Access-Control-Max-Age', '600');
+  return response;
+}
+
+export async function OPTIONS(request: Request) {
+  return applyCors(new NextResponse(null, { status: 204 }), request);
+}
+
 /**
  * GET /api/performance/summary
  * Returns LIVE TRADING model portfolio performance summary with equity curve
@@ -13,6 +32,7 @@ export const dynamic = 'force-dynamic';
  * PRO-only feature
  */
 export async function GET(request: Request) {
+  const corsJson = (data: any, status = 200) => applyCors(NextResponse.json(data, { status }), request);
   try {
     const url = new URL(request.url);
     const isPublicPreview = url.searchParams.get('public') === '1';
@@ -43,7 +63,7 @@ export async function GET(request: Request) {
     }
 
     if (!hasAccess) {
-      return NextResponse.json({
+      return corsJson({
         starting_equity: 0,
         current_equity: 0,
         total_return_pct: 0,
@@ -69,10 +89,7 @@ export async function GET(request: Request) {
 
     if (tradesError) {
       console.error('[performance/summary] Error fetching trades:', tradesError);
-      return NextResponse.json(
-        { error: 'Failed to fetch trades data' },
-        { status: 500 }
-      );
+      return corsJson({ error: 'Failed to fetch trades data' }, 500);
     }
 
     // 2) Fetch open positions for unrealized P&L (LIVE SWING engine only)
@@ -84,10 +101,7 @@ export async function GET(request: Request) {
 
     if (posError) {
       console.error('[performance/summary] Error fetching open positions:', posError);
-      return NextResponse.json(
-        { error: 'Failed to fetch open positions' },
-        { status: 500 }
-      );
+      return corsJson({ error: 'Failed to fetch open positions' }, 500);
     }
 
     const starting_equity = INITIAL_EQUITY; // Single $100K Active Signals portfolio
@@ -186,7 +200,7 @@ export async function GET(request: Request) {
     }
 
 
-    return NextResponse.json({
+    return corsJson({
       starting_equity,
       current_equity,
       total_return_pct: Math.round(total_return_pct * 100) / 100,
@@ -200,9 +214,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('[performance/summary] Unexpected error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return corsJson({ error: 'Internal server error' }, 500);
   }
 }
