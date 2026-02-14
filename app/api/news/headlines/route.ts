@@ -27,21 +27,33 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "5", 10);
     const category = searchParams.get("category") || "all";
 
-    // Try cached news first
+    // Try cached news first (prefer recent), but fall back to latest available if cache is stale.
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    let query = supabase
-      .from("news_cache")
-      .select("*")
-      .gte("published_at", cutoff)
-      .order("published_at", { ascending: false })
-      .limit(limit);
 
-    // "all" means no category filter. Otherwise filter by lowercased category.
-    if (category !== "all") {
-      query = query.eq("category", category.toLowerCase());
-    }
+    const buildBaseQuery = () => {
+      let query = supabase
+        .from("news_cache")
+        .select("*")
+        .order("published_at", { ascending: false })
+        .limit(limit);
 
-    const { data: news, error } = await query;
+      // "all" means no category filter. Otherwise filter by lowercased category.
+      if (category !== "all") {
+        query = query.eq("category", category.toLowerCase());
+      }
+
+      return query;
+    };
+
+    // 1) Prefer recent rows.
+    const { data: recentNews, error } = await buildBaseQuery().gte("published_at", cutoff);
+
+    // 2) If no recent rows (but query succeeded), return the latest cached rows regardless of age.
+    const news = (recentNews && recentNews.length > 0)
+      ? recentNews
+      : error
+        ? null
+        : (await buildBaseQuery()).data;
 
     if (error) {
       console.warn("[news/headlines] cache query failed:", error.message);
