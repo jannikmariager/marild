@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     // 1) Fetch all closed trades for LIVE SWING engine (realized P&L since inception)
     const { data: allTrades, error: tradesError } = await supabase
       .from('live_trades')
-      .select('realized_pnl_dollars, realized_pnl_date, exit_timestamp, exit_price, entry_price, exit_reason, side')
+      .select('realized_pnl_dollars, realized_pnl_date, entry_timestamp, exit_timestamp, exit_price, entry_price, exit_reason, side')
       .eq('strategy', 'SWING')
       .eq('engine_key', 'SWING')
       .order('realized_pnl_date', { ascending: true, nullsFirst: false })
@@ -149,11 +149,39 @@ export async function GET(request: Request) {
 
     // Calculate trade statistics
     const cumulative_trades = allTrades?.length || 0;
-    const cumulative_wins = allTrades?.filter(t => 
-      t.exit_reason === 'TP_HIT' || t.exit_reason === 'TRAILING_SL_HIT' || t.realized_pnl_dollars > 0
-    ).length || 0;
-    
+    const cumulative_wins =
+      allTrades?.filter(
+        (t: any) => t.exit_reason === 'TP_HIT' || t.exit_reason === 'TRAILING_SL_HIT' || (t.realized_pnl_dollars ?? 0) > 0,
+      ).length || 0;
+
     const win_rate_pct = cumulative_trades > 0 ? (cumulative_wins / cumulative_trades) * 100 : 0;
+
+    // Profit factor: gross profits / gross losses (abs). Null if no losses.
+    let grossProfit = 0;
+    let grossLossAbs = 0;
+    for (const t of allTrades ?? []) {
+      const pnl = typeof (t as any).realized_pnl_dollars === 'number' ? (t as any).realized_pnl_dollars : 0;
+      if (pnl > 0) grossProfit += pnl;
+      else if (pnl < 0) grossLossAbs += Math.abs(pnl);
+    }
+    const profit_factor = grossLossAbs > 0 ? grossProfit / grossLossAbs : null;
+
+    // Avg hold time in hours for closed trades (entry_timestamp -> exit_timestamp)
+    let holdSumMs = 0;
+    let holdCount = 0;
+    for (const t of allTrades ?? []) {
+      const entryTs = (t as any).entry_timestamp as string | null | undefined;
+      const exitTs = (t as any).exit_timestamp as string | null | undefined;
+      if (!entryTs || !exitTs) continue;
+      const entryMs = new Date(entryTs).getTime();
+      const exitMs = new Date(exitTs).getTime();
+      if (!Number.isFinite(entryMs) || !Number.isFinite(exitMs)) continue;
+      const diff = exitMs - entryMs;
+      if (diff <= 0) continue;
+      holdSumMs += diff;
+      holdCount += 1;
+    }
+    const avg_hold_hours = holdCount > 0 ? holdSumMs / holdCount / (1000 * 60 * 60) : null;
 
     // Find best and worst trades
     let best_trade_pct = null;
@@ -182,6 +210,8 @@ export async function GET(request: Request) {
       max_drawdown_pct: Math.round(max_drawdown_pct * 100) / 100,
       trades_count: cumulative_trades,
       win_rate_pct: Math.round(win_rate_pct * 100) / 100,
+      profit_factor: typeof profit_factor === 'number' ? Math.round(profit_factor * 100) / 100 : null,
+      avg_hold_hours: typeof avg_hold_hours === 'number' ? Math.round(avg_hold_hours * 10) / 10 : null,
       best_trade_pct: best_trade_pct !== null ? Math.round(best_trade_pct * 100) / 100 : null,
       worst_trade_pct: worst_trade_pct !== null ? Math.round(worst_trade_pct * 100) / 100 : null,
       equity_curve,
