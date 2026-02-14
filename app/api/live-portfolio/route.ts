@@ -7,8 +7,6 @@ import { calculateTradingDays } from '@/lib/performance/tradingDays';
 import { createClient as createServerClient } from '@/lib/supabaseServer';
 import { hasProAccess } from '@/lib/subscription/devOverride';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 function normalizeToActiveStrategy(raw?: string | null): 'DAYTRADE' | 'SWING' {
   const v = (raw || '').toUpperCase();
@@ -22,13 +20,50 @@ function normalizeToActiveStrategy(raw?: string | null): 'DAYTRADE' | 'SWING' {
   return 'SWING';
 }
 
+const getBearerToken = (request: NextRequest): string | null => {
+  const raw = request.headers.get('authorization') ?? request.headers.get('Authorization');
+  if (!raw) return null;
+  const match = raw.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+};
+
 export async function GET(request: NextRequest) {
   const now = new Date();
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+    }
+
     const authClient = await createServerClient();
     const {
-      data: { user },
+      data: { user: cookieUser },
     } = await authClient.auth.getUser();
+
+    // Fallback: accept Bearer token auth (Vite frontend uses access_token, not Next cookie sessions).
+    let bearerUser: { id: string; email?: string | null } | null = null;
+    if (!cookieUser) {
+      const token = getBearerToken(request);
+      if (token) {
+        try {
+          const supabaseAdmin = createServiceClient(supabaseUrl, supabaseServiceKey, {
+            auth: { persistSession: false },
+          });
+          const {
+            data: { user },
+          } = await supabaseAdmin.auth.getUser(token);
+          if (user) {
+            bearerUser = { id: user.id, email: user.email };
+          }
+        } catch (e) {
+          console.warn('[live-portfolio] bearer auth failed', e);
+        }
+      }
+    }
+
+    const user = cookieUser ?? (bearerUser as any);
 
     const supabase = createServiceClient(supabaseUrl, supabaseServiceKey);
     const { searchParams } = new URL(request.url);
@@ -38,11 +73,10 @@ export async function GET(request: NextRequest) {
     let isEntitled = hasProAccess(false);
 
     if (user && !isEntitled) {
-      const { data: profile } = await authClient
-        .from('user_profile')
-        .select('subscription_tier')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Prefer cookie-backed client when available; otherwise query via service client.
+      const { data: profile } = cookieUser
+        ? await authClient.from('user_profile').select('subscription_tier').eq('user_id', user.id).maybeSingle()
+        : await supabase.from('user_profile').select('subscription_tier').eq('user_id', user.id).maybeSingle();
 
       const hasPaid = profile?.subscription_tier === 'pro';
       isEntitled = hasProAccess(!!hasPaid);
