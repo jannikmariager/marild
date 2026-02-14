@@ -53,11 +53,19 @@ type AiSignalRow = {
   stop_loss: number | null;
   take_profit_1: number | null;
   signal_bar_ts: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 type LivePositionRow = {
   ticker: string | null;
   side: string | null;
+};
+
+type WhitelistRow = {
+  symbol: string | null;
+  is_top8: boolean | null;
+  manual_priority: number | null;
 };
 
 /**
@@ -89,31 +97,87 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const limit = clampInt(Number(searchParams.get("limit") ?? 8), 1, 50);
+  const modeRaw = (searchParams.get("mode") ?? "focus").toLowerCase();
+  const mode: "focus" | "all" = modeRaw === "all" ? "all" : "focus";
   const sort = (searchParams.get("sort") ?? "confidence").toLowerCase();
 
-  let query = supabaseAdmin
+  const defaultLimit = mode === "all" ? 32 : 8;
+  const limit = clampInt(Number(searchParams.get("limit") ?? defaultLimit), 1, 200);
+
+  // Load tickers from whitelist.
+  // - focus => enabled + is_top8
+  // - all   => enabled
+  let whitelistQuery = supabaseAdmin
+    .from("ticker_whitelist")
+    .select("symbol, is_top8, manual_priority", { count: "exact" })
+    .eq("is_enabled", true);
+
+  if (mode === "focus") {
+    whitelistQuery = whitelistQuery.eq("is_top8", true);
+  }
+
+  whitelistQuery = whitelistQuery
+    .order("is_top8", { ascending: false })
+    .order("manual_priority", { ascending: false })
+    .order("symbol", { ascending: true })
+    .limit(limit);
+
+  const { data: whitelistRows, error: whitelistError, count: whitelistCount } = await whitelistQuery;
+  if (whitelistError) {
+    return json(request, { error: "Unable to load tickers" }, { status: 500 });
+  }
+
+  const whitelist = (whitelistRows ?? []) as WhitelistRow[];
+
+  // Normalize + dedupe (preserve original order after sorting).
+  const symbols: string[] = [];
+  const seen = new Set<string>();
+  for (const r of whitelist) {
+    const sym = (r.symbol ?? "").trim().toUpperCase();
+    if (!sym) continue;
+    if (seen.has(sym)) continue;
+    seen.add(sym);
+    symbols.push(sym);
+  }
+
+  const universeTotal = whitelistCount ?? symbols.length;
+
+  if (symbols.length === 0) {
+    return json(request, {
+      mode,
+      total: universeTotal,
+      asOf: new Date().toISOString(),
+      window: { timezone: TIMEZONE, start: WINDOW_START, end: WINDOW_END },
+      items: [],
+    });
+  }
+
+  // Fetch latest signals for those symbols.
+  // We may have multiple rows per symbol (different bar_ts); dedupe to the latest.
+  const { data: signalRows, error: signalsError } = await supabaseAdmin
     .from("ai_signals")
     .select(
-      "id, symbol, signal_type, status, confidence_score, correction_risk, entry_price, stop_loss, take_profit_1, signal_bar_ts",
+      "id, symbol, signal_type, status, confidence_score, correction_risk, entry_price, stop_loss, take_profit_1, signal_bar_ts, created_at, updated_at",
     )
     .eq("engine_key", "SWING")
     .eq("engine_type", "SWING")
     .eq("timeframe", "1h")
     .in("status", ["active", "watchlist"])
-    .limit(limit);
-
-  if (sort === "symbol") {
-    query = query.order("symbol", { ascending: true }).order("signal_bar_ts", { ascending: false });
-  } else {
-    // Default: confidence
-    query = query.order("confidence_score", { ascending: false }).order("signal_bar_ts", { ascending: false });
-  }
-
-  const { data: signals, error: signalsError } = await query;
+    .in("symbol", symbols)
+    .order("signal_bar_ts", { ascending: false })
+    .limit(Math.max(500, symbols.length * 5));
 
   if (signalsError) {
     return json(request, { error: "Failed to load focus signals" }, { status: 500 });
+  }
+
+  const bySymbol = new Map<string, AiSignalRow>();
+  for (const row of (signalRows ?? []) as AiSignalRow[]) {
+    const sym = (row.symbol ?? "").trim().toUpperCase();
+    if (!sym) continue;
+    if (!bySymbol.has(sym)) {
+      bySymbol.set(sym, row);
+    }
   }
 
   // Live status: mark tickers with open positions.
@@ -132,15 +196,16 @@ export async function GET(request: NextRequest) {
     else if (side) posMap.set(ticker, "LIVE LONG");
   }
 
-  const items = ((signals ?? []) as AiSignalRow[]).map((s) => {
-    const st = (s.signal_type ?? "").toLowerCase();
+  const items = symbols.map((symbol) => {
+    const s = bySymbol.get(symbol) ?? null;
+    const st = (s?.signal_type ?? "").toLowerCase();
     const signal = st.includes("buy") ? "BUY" : st.includes("sell") ? "SELL" : "—";
 
-    // Normalize confidence/risk to 0-1 fractions for the frontend (but allow nulls).
-    const confidence = typeof s.confidence_score === "number" ? s.confidence_score / 100 : null;
-    const risk = typeof s.correction_risk === "number" ? s.correction_risk / 100 : null;
+    // Keep confidence/risk as 0-100 numbers (matches existing admin/UX expectations).
+    const confidence = typeof s?.confidence_score === "number" ? s.confidence_score : null;
+    const risk = typeof s?.correction_risk === "number" ? s.correction_risk : null;
 
-    const symbol = s.symbol;
+    const signalTs = s?.signal_bar_ts ?? s?.updated_at ?? s?.created_at ?? null;
 
     return {
       symbol,
@@ -148,15 +213,31 @@ export async function GET(request: NextRequest) {
       status: posMap.get(symbol) ?? null,
       confidence,
       risk,
-      entry: s.entry_price ?? null,
-      stop: s.stop_loss ?? null,
-      target: s.take_profit_1 ?? null,
+      entry: s?.entry_price ?? null,
+      stop: s?.stop_loss ?? null,
+      target: s?.take_profit_1 ?? null,
+      signalTs,
     };
   });
 
+  // Apply sort on the final list so it works for both modes.
+  const sortedItems = items
+    .slice()
+    .sort((a, b) => {
+      if (sort === "symbol") {
+        return a.symbol.localeCompare(b.symbol);
+      }
+      // Default: confidence (nulls last)
+      const ac = typeof a.confidence === "number" ? a.confidence : -1;
+      const bc = typeof b.confidence === "number" ? b.confidence : -1;
+      return bc - ac;
+    });
+
   return json(request, {
+    mode,
+    total: universeTotal,
     asOf: new Date().toISOString(),
     window: { timezone: TIMEZONE, start: WINDOW_START, end: WINDOW_END },
-    items,
+    items: sortedItems,
   });
 }
