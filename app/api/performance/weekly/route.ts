@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireActiveEntitlement } from "@/app/api/_lib/entitlement";
 
 export const dynamic = "force-dynamic";
 // Ensure this route runs in the Node.js runtime (uses Supabase service role + Intl time zone formatting).
@@ -92,6 +93,15 @@ const parseDateKeyFromExitTs = (exitTimestamp: string | null): string | null => 
 };
 
 export async function GET(request: NextRequest) {
+  try {
+    await requireActiveEntitlement(request);
+  } catch (resp: any) {
+    if (resp instanceof Response) {
+      return applyCors(resp as NextResponse, request);
+    }
+    return json(request, { error: "subscription_required" }, { status: 403 });
+  }
+
   const token = getBearerToken(request);
   if (!token) {
     return json(request, { error: "Unauthorized" }, { status: 401 });

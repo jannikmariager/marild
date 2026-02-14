@@ -1,28 +1,62 @@
+import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabaseServer';
 import { getOrCreateStripeCustomer, createBillingPortalSession } from '@/lib/stripe';
 
+const getBearerToken = (request: NextRequest): string | null => {
+  const raw = request.headers.get('authorization') ?? request.headers.get('Authorization');
+  if (!raw) return null;
+  const match = raw.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+};
+
 export async function POST(request: NextRequest) {
   try {
-    // Get session and user
-    const supabase = await createClient();
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    // Prefer cookie session (Next app) but accept Bearer token for the Vite app.
+    const authClient = await createClient();
+    const {
+      data: { user: cookieUser },
+    } = await authClient.auth.getUser();
 
-    if (sessionError || !session) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    let userId = cookieUser?.id ?? null;
+    let userEmail = cookieUser?.email ?? null;
+
+    if (!userId) {
+      const token = getBearerToken(request);
+      if (!token) {
+        return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+      }
+      if (!supabaseUrl || !supabaseServiceKey) {
+        return NextResponse.json({ message: 'Server not configured' }, { status: 500 });
+      }
+
+      const supabaseAdmin = createServiceClient(supabaseUrl, supabaseServiceKey, {
+        auth: { persistSession: false },
+      });
+      const {
+        data: { user },
+      } = await supabaseAdmin.auth.getUser(token);
+
+      if (!user?.id) {
+        return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+      }
+
+      userId = user.id;
+      userEmail = user.email ?? null;
     }
 
-    // Get user email
-    const userEmail = session.user.email;
     if (!userEmail) {
       return NextResponse.json({ message: 'User email not found' }, { status: 400 });
     }
 
     // Get or create Stripe customer
-    const customerId = await getOrCreateStripeCustomer(userEmail, session.user.id);
+    const customerId = await getOrCreateStripeCustomer(userEmail, userId);
 
     // Create billing portal session
-    const returnUrl = `${request.nextUrl.origin}/account`;
+    const returnUrl = `${request.nextUrl.origin}/pricing`;
     const portalUrl = await createBillingPortalSession(customerId, returnUrl);
 
     return NextResponse.json({ url: portalUrl });
