@@ -55,12 +55,27 @@ export async function GET(request: NextRequest) {
     // 1) Prefer recent rows.
     const { data: recentNews, error } = await buildBaseQuery().gte("published_at", cutoff);
 
-    // 2) If no recent rows (but query succeeded), return the latest cached rows regardless of age.
-    const baseNews = (recentNews && recentNews.length > 0)
-      ? recentNews
-      : error
-        ? null
-        : (await buildBaseQuery()).data;
+    // 2) If we have some recent rows, keep them but fill the remainder with older cached rows.
+    // Otherwise, return the latest cached rows regardless of age.
+    let baseNews = null as any[] | null;
+    if (recentNews && recentNews.length > 0) {
+      if (recentNews.length >= limit) {
+        baseNews = recentNews;
+      } else {
+        const { data: anyAgeNews } = await buildBaseQuery();
+        const merged = [...recentNews, ...(anyAgeNews || [])];
+        const seen = new Set<string>();
+        baseNews = merged.filter((item) => {
+          const key = item.url ?? item.link ?? item.id ?? item.title ?? item.headline;
+          if (!key) return false;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }).slice(0, limit);
+      }
+    } else {
+      baseNews = error ? null : (await buildBaseQuery()).data;
+    }
 
     if (error) {
       console.warn("[news/headlines] cache query failed:", error.message);
