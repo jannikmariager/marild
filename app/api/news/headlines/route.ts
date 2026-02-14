@@ -59,6 +59,33 @@ export async function GET(request: NextRequest) {
       console.warn("[news/headlines] cache query failed:", error.message);
     }
 
+    // If cache is empty, fetch and cache fresh headlines via Edge Function.
+    // This keeps the UI alive even if scheduled ingestion isn't running.
+    if ((!news || news.length === 0) && !error) {
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke("news_sentiment_analyzer", {
+          body: { symbol: null, limit },
+        });
+
+        if (!fnError && data && Array.isArray((data as any).articles)) {
+          const fresh = (data as any).articles as any[];
+          const items = fresh.map((item) => ({
+            id: item.url ?? item.headline,
+            title: item.headline,
+            source: item.source || "Market News",
+            published_at: item.published_at,
+            time_ago: null,
+            sentiment: (item.sentiment_label || "neutral").toLowerCase(),
+            url: item.url || "#",
+          }));
+
+          return applyCors(NextResponse.json({ articles: items, total: items.length }), request);
+        }
+      } catch (err) {
+        console.warn("[news/headlines] on-demand fetch failed");
+      }
+    }
+
     const items = (news || []).map((item) => ({
       id: item.id ?? item.url ?? item.title,
       title: item.title || item.headline,
