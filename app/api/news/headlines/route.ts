@@ -27,6 +27,13 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "5", 10);
     const category = searchParams.get("category") || "all";
 
+    const json = (payload: unknown) => {
+      const res = NextResponse.json(payload);
+      // Let Vercel edge cache successful reads briefly to reduce latency/cold starts.
+      res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=600");
+      return applyCors(res, request);
+    };
+
     // Try cached news first (prefer recent), but fall back to latest available if cache is stale.
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
@@ -49,7 +56,7 @@ export async function GET(request: NextRequest) {
     const { data: recentNews, error } = await buildBaseQuery().gte("published_at", cutoff);
 
     // 2) If no recent rows (but query succeeded), return the latest cached rows regardless of age.
-    const news = (recentNews && recentNews.length > 0)
+    const baseNews = (recentNews && recentNews.length > 0)
       ? recentNews
       : error
         ? null
@@ -59,9 +66,11 @@ export async function GET(request: NextRequest) {
       console.warn("[news/headlines] cache query failed:", error.message);
     }
 
-    // If cache is empty, fetch and cache fresh headlines via Edge Function.
+    const cacheSparse = !baseNews || baseNews.length < Math.min(limit, 10);
+
+    // If cache is empty/sparse, top up via Edge Function.
     // This keeps the UI alive even if scheduled ingestion isn't running.
-    if ((!news || news.length === 0) && !error) {
+    if (cacheSparse && !error) {
       try {
         const { data, error: fnError } = await supabase.functions.invoke("news_sentiment_analyzer", {
           body: { symbol: null, limit },
@@ -69,7 +78,7 @@ export async function GET(request: NextRequest) {
 
         if (!fnError && data && Array.isArray((data as any).articles)) {
           const fresh = (data as any).articles as any[];
-          const items = fresh.map((item) => ({
+          const freshItems = fresh.map((item) => ({
             id: item.url ?? item.headline,
             title: item.headline,
             source: item.source || "Market News",
@@ -79,14 +88,33 @@ export async function GET(request: NextRequest) {
             url: item.url || "#",
           }));
 
-          return applyCors(NextResponse.json({ articles: items, total: items.length }), request);
+          const cachedItems = (baseNews || []).map((item) => ({
+            id: item.id ?? item.url ?? item.title,
+            title: item.title || item.headline,
+            source: item.source || "Market News",
+            published_at: item.published_at,
+            time_ago: null,
+            sentiment: item.sentiment || "neutral",
+            url: item.url || item.link || "#",
+          }));
+
+          const merged = [...cachedItems, ...freshItems];
+          const seen = new Set<string>();
+          const deduped = merged.filter((item) => {
+            const key = (item.url && item.url !== "#") ? item.url : item.id;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
+          return json({ articles: deduped.slice(0, limit), total: deduped.length });
         }
       } catch (err) {
         console.warn("[news/headlines] on-demand fetch failed");
       }
     }
 
-    const items = (news || []).map((item) => ({
+    const items = (baseNews || []).map((item) => ({
       id: item.id ?? item.url ?? item.title,
       title: item.title || item.headline,
       source: item.source || "Market News",
@@ -96,7 +124,7 @@ export async function GET(request: NextRequest) {
       url: item.url || item.link || "#",
     }));
 
-    return applyCors(NextResponse.json({ articles: items, total: items.length }), request);
+    return json({ articles: items, total: items.length });
   } catch (err: any) {
     console.error("[news/headlines] unexpected error:", err);
     // Return graceful empty payload to keep UI from erroring
