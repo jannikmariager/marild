@@ -29,13 +29,19 @@ export async function GET(request: NextRequest) {
 
     // Try cached news first
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    const { data: news, error } = await supabase
+    let query = supabase
       .from("news_cache")
       .select("*")
-      .eq("category", category === "all" ? category : category.toLowerCase())
       .gte("published_at", cutoff)
       .order("published_at", { ascending: false })
       .limit(limit);
+
+    // "all" means no category filter. Otherwise filter by lowercased category.
+    if (category !== "all") {
+      query = query.eq("category", category.toLowerCase());
+    }
+
+    const { data: news, error } = await query;
 
     if (error) {
       console.warn("[news/headlines] cache query failed:", error.message);
