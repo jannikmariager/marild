@@ -71,7 +71,7 @@ export async function getUserIdFromRequest(request: NextRequest): Promise<string
 }
 
 export async function getEntitlementForUserId(userId: string): Promise<Entitlement> {
-  // DEV override
+  // DEV override (env-based)
   if (hasProAccess(false)) {
     return { active: true, plan: 'pro', status: 'active' };
   }
@@ -86,14 +86,20 @@ export async function getEntitlementForUserId(userId: string): Promise<Entitleme
     auth: { persistSession: false },
   });
 
-  const { data: profile } = await supabase
+  const { data: profile, error } = await supabase
     .from('user_profile')
-    .select('subscription_tier')
+    .select('subscription_tier, premium_override_dev')
     .eq('user_id', userId)
     .maybeSingle();
 
+  if (error) {
+    // Fail closed.
+    return { active: false, plan: null, status: 'inactive' };
+  }
+
   const isPro = profile?.subscription_tier === 'pro';
-  const active = Boolean(isPro);
+  const override = profile?.premium_override_dev === true;
+  const active = Boolean(isPro || override);
 
   return {
     active,

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabaseServer';
-import { hasProAccess } from '@/lib/subscription/devOverride';
+import { requireActiveEntitlement } from '@/app/api/_lib/entitlement';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,44 +11,13 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const engineVersion = url.searchParams.get('engineVersion') ?? 'v7.4';
 
-    // Auth
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.warn('[performance/universe] Auth error, falling back to dev override if enabled:', authError);
-
-      // In DEV with PRO override, don't block on auth
-      if (hasProAccess(false)) {
-        return NextResponse.json({
-          tickers: [],
-          access: { is_locked: false },
-        });
+    try {
+      await requireActiveEntitlement(request as any);
+    } catch (resp: any) {
+      if (resp instanceof Response) {
+        return resp as any;
       }
-
-      return NextResponse.json(
-        { error: 'NO_AUTH', message: 'Authentication required', access: { is_locked: true } },
-        { status: 401 }
-      );
-    }
-
-    // PRO gating similar to performance preview
-    const [{ data: subStatus }, { data: profile }] = await Promise.all([
-      supabase.from('subscription_status').select('tier').eq('user_id', user.id).maybeSingle(),
-      supabase.from('user_profile').select('subscription_tier').eq('user_id', user.id).maybeSingle(),
-    ]);
-
-    const tier = subStatus?.tier ?? profile?.subscription_tier ?? 'free';
-    const isPro = tier === 'pro';
-    const hasAccess = hasProAccess(isPro);
-
-    if (!hasAccess) {
-      return NextResponse.json(
-        { error: 'LOCKED', message: 'Upgrade to PRO to see performance universe', access: { is_locked: true } },
-        { status: 403 }
-      );
+      throw resp;
     }
 
     // 1) Load promoted swing universe from admin console

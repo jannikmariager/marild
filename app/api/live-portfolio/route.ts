@@ -30,6 +30,16 @@ const getBearerToken = (request: NextRequest): string | null => {
 export async function GET(request: NextRequest) {
   const now = new Date();
   try {
+    // Hard gate: require an active subscription.
+    try {
+      const { requireActiveEntitlement } = await import('@/app/api/_lib/entitlement');
+      await requireActiveEntitlement(request);
+    } catch (resp: any) {
+      if (resp instanceof Response) {
+        return resp as any;
+      }
+      throw resp;
+    }
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

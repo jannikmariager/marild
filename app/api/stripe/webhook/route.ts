@@ -32,7 +32,7 @@ function requireWebhookSecret(): string {
   }
   return sanitizedEndpointSecret;
 }
-type SubscriptionTier = 'pro' | 'expired';
+type SubscriptionTier = 'pro' | 'free';
 
 // Initialize Supabase with service role for admin operations
 const supabase = createClient(
@@ -48,7 +48,7 @@ const supabase = createClient(
 
 function mapStripeStatusToTier(status: Stripe.Subscription.Status): SubscriptionTier {
   const proStatuses: Stripe.Subscription.Status[] = ['active', 'trialing', 'past_due'];
-  return proStatuses.includes(status) ? 'pro' : 'expired';
+  return proStatuses.includes(status) ? 'pro' : 'free';
 }
 
 async function resolveAuthUser(email: string) {

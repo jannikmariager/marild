@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabaseServer';
 import { NextResponse } from 'next/server';
-import { hasProAccess } from '@/lib/subscription/devOverride';
+import { requireActiveEntitlement } from '@/app/api/_lib/entitlement';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,55 +11,20 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: Request) {
   try {
+    try {
+      await requireActiveEntitlement(request as any);
+    } catch (resp: any) {
+      if (resp instanceof Response) {
+        return resp as any;
+      }
+      throw resp;
+    }
+
     const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
-
-    // Get authenticated user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error('[performance/trades] Auth error:', authError);
-      return NextResponse.json({
-        trades: [],
-        pagination: {
-          limit: 20,
-          offset: 0,
-          total: 0,
-          has_more: false,
-        },
-        access: { is_locked: true },
-      });
-    }
-
-    // PRO gating based on subscription tier (with DEV override)
-    const { data: subStatus } = await supabase
-      .from('subscription_status')
-      .select('tier')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-
-    const isPro = subStatus?.tier === 'pro';
-    const hasAccess = hasProAccess(isPro);
-
-    if (!hasAccess) {
-      return NextResponse.json({
-        trades: [],
-        pagination: {
-          limit: 20,
-          offset: 0,
-          total: 0,
-          has_more: false,
-        },
-        access: { is_locked: true },
-      });
-    }
 
     const isLocked = false;
 

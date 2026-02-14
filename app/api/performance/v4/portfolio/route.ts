@@ -81,6 +81,15 @@ async function fetchBacktests(
 
 export async function POST(req: NextRequest) {
   try {
+    try {
+      const { requireActiveEntitlement } = await import('@/app/api/_lib/entitlement');
+      await requireActiveEntitlement(req);
+    } catch (resp: any) {
+      if (resp instanceof Response) {
+        return resp as any;
+      }
+      throw resp;
+    }
     const body = (await req.json()) as {
       tickers?: string[];
       engineType?: BacktestEngineType;

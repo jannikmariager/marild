@@ -37,18 +37,16 @@ export async function GET(request: NextRequest) {
       }),
     );
   } catch (respOrErr: any) {
-    if (respOrErr instanceof NextResponse) {
-      return applyCors(request, respOrErr);
-    }
-
-    // If the helper threw a NextResponse.json(...) it will be a Response.
-    if (respOrErr && typeof respOrErr === "object" && "status" in respOrErr) {
+    if (respOrErr instanceof Response) {
       return applyCors(request, respOrErr as NextResponse);
     }
 
     return applyCors(
       request,
-      NextResponse.json({ active: false, plan: null, status: "unauthenticated", error: "entitlement unavailable" }, { status: 500 }),
+      NextResponse.json(
+        { active: false, plan: null, status: "unauthenticated", error: "entitlement unavailable" },
+        { status: 500 },
+      ),
     );
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabaseServer'
+import { requireActiveEntitlement } from '@/app/api/_lib/entitlement'
 import { buildDailySeries, type EquitySnapshotRow } from '@/lib/performance/dailySeries'
 import { INITIAL_EQUITY } from '@/lib/performance/metrics'
 
@@ -64,6 +65,15 @@ const STARTING_EQUITY = INITIAL_EQUITY
 // GET /api/performance/journal?strategy=SWING&days=90
 export async function GET(request: Request) {
   try {
+    try {
+      await requireActiveEntitlement(request as any)
+    } catch (resp: any) {
+      if (resp instanceof Response) {
+        return resp as any
+      }
+      throw resp
+    }
+
     const supabase = await createClient()
     const { searchParams } = new URL(request.url)
 

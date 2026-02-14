@@ -39,42 +39,17 @@ export async function GET(request: Request) {
 
     const supabase = await createClient();
 
-    // Only hit auth + subscription checks when not rendering public preview
-    let hasAccess = isPublicPreview ? true : hasProAccess(false);
-
-    if (!isPublicPreview && !hasAccess) {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        hasAccess = false;
-      } else {
-        // Canonical tier check from users table
-        const { data: profile } = await supabase
-          .from('user_profile')
-          .select('subscription_tier')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        const isPro = profile?.subscription_tier === 'pro';
-        hasAccess = hasProAccess(isPro);
+    // Public marketing preview bypasses subscription enforcement.
+    if (!isPublicPreview) {
+      try {
+        const { requireActiveEntitlement } = await import("@/app/api/_lib/entitlement");
+        await requireActiveEntitlement(request as any);
+      } catch (resp: any) {
+        if (resp instanceof Response) {
+          return applyCors(resp as any, request);
+        }
+        return corsJson({ error: "subscription_required" }, 403);
       }
-    }
-
-    if (!hasAccess) {
-      return corsJson({
-        starting_equity: 0,
-        current_equity: 0,
-        total_return_pct: 0,
-        max_drawdown_pct: 0,
-        trades_count: 0,
-        win_rate_pct: 0,
-        best_trade_pct: null,
-        worst_trade_pct: null,
-        equity_curve: [],
-        access: { is_locked: true },
-      });
     }
 
     // Align with journal + admin: restrict to LIVE engine only (engine_key = 'SWING')

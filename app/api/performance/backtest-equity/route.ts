@@ -116,6 +116,15 @@ async function buildBenchmarkCurve(
 
 export async function GET(request: Request) {
   try {
+    try {
+      const { requireActiveEntitlement } = await import('@/app/api/_lib/entitlement');
+      await requireActiveEntitlement(request as any);
+    } catch (resp: any) {
+      if (resp instanceof Response) {
+        return resp as any;
+      }
+      throw resp;
+    }
     const url = new URL(request.url);
     const ticker = url.searchParams.get('ticker');
     const horizon = url.searchParams.get('horizon') ?? 'swing';

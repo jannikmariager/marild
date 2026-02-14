@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     const customerId = await getOrCreateStripeCustomer(userEmail, userId);
 
     // Create billing portal session
-    const returnUrl = `${request.nextUrl.origin}/pricing`;
+    const returnUrl = `${request.nextUrl.origin}/app/settings`;
     const portalUrl = await createBillingPortalSession(customerId, returnUrl);
 
     return NextResponse.json({ url: portalUrl });

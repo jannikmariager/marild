@@ -61,9 +61,14 @@ export async function PATCH(request: NextRequest) {
       auth: { persistSession: false },
     });
 
+    const nowIso = new Date().toISOString();
+
     const { data: updated, error } = await supabase
       .from('user_profile')
-      .upsert({ user_id: userId, email, display_name }, { onConflict: 'user_id' })
+      .upsert(
+        { user_id: userId, email, display_name, updated_at: nowIso },
+        { onConflict: 'user_id' },
+      )
       .select('display_name')
       .maybeSingle();
 

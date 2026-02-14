@@ -1,37 +1,21 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabaseServer';
-import { hasProAccess } from '@/lib/subscription/devOverride';
+import { requireActiveEntitlement } from '@/app/api/_lib/entitlement';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
+    try {
+      await requireActiveEntitlement(request as any);
+    } catch (resp: any) {
+      if (resp instanceof Response) {
+        return resp as any;
+      }
+      throw resp;
+    }
+
     const supabase = await createClient();
-
-    // Auth
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ access: { is_locked: true }, summary: null });
-    }
-
-    // PRO gating (skip DB fetch for free/expired)
-    const { data: subStatus } = await supabase
-      .from('subscription_status')
-      .select('tier')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-
-    const isPro = subStatus?.tier === 'pro';
-    const hasAccess = hasProAccess(isPro);
-
-    if (!hasAccess) {
-      return NextResponse.json({ access: { is_locked: true }, summary: null });
-    }
 
     // Today in UTC
     const now = new Date();
