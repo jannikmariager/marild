@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
+// Ensure this route runs in the Node.js runtime (uses Supabase service role + Intl time zone formatting).
+export const runtime = "nodejs";
 
 const TIMEZONE = "America/New_York";
 const STRATEGY = "SWING";
