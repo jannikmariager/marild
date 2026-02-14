@@ -93,18 +93,23 @@ const parseDateKeyFromExitTs = (exitTimestamp: string | null): string | null => 
 };
 
 export async function GET(request: NextRequest) {
-  try {
-    await requireActiveEntitlement(request);
-  } catch (resp: any) {
-    if (resp instanceof Response) {
-      return applyCors(resp as NextResponse, request);
-    }
-    return json(request, { error: "subscription_required" }, { status: 403 });
-  }
+  const { searchParams } = new URL(request.url);
+  const isPublicPreview = searchParams.get("public") === "1";
 
-  const token = getBearerToken(request);
-  if (!token) {
-    return json(request, { error: "Unauthorized" }, { status: 401 });
+  if (!isPublicPreview) {
+    try {
+      await requireActiveEntitlement(request);
+    } catch (resp: any) {
+      if (resp instanceof Response) {
+        return applyCors(resp as NextResponse, request);
+      }
+      return json(request, { error: "subscription_required" }, { status: 403 });
+    }
+
+    const token = getBearerToken(request);
+    if (!token) {
+      return json(request, { error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -117,13 +122,17 @@ export async function GET(request: NextRequest) {
     auth: { persistSession: false },
   });
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabaseAdmin.auth.getUser(token);
+  // When not public, validate the token belongs to a real user.
+  if (!isPublicPreview) {
+    const token = getBearerToken(request);
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseAdmin.auth.getUser(token as string);
 
-  if (userError || !user) {
-    return json(request, { error: "Unauthorized" }, { status: 401 });
+    if (userError || !user) {
+      return json(request, { error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const tradingDays = lastTradingDays(5);
