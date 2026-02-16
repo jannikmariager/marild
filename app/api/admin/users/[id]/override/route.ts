@@ -38,7 +38,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   try {
     const { data: before, error: beforeError } = await supabase
       .from('user_profile')
-      .select('user_id, email, subscription_tier, premium_override_dev, role, updated_at')
+      .select('user_id, email, subscription_tier, premium_override_dev, trial_ends_at, role, updated_at')
       .eq('user_id', id)
       .maybeSingle();
 
@@ -46,17 +46,24 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       return NextResponse.json({ error: 'Failed to load user' }, { status: 500 });
     }
 
-    const patch: Record<string, any> = { ...parsed.data, updated_at: new Date().toISOString() };
+    const patch: Record<string, any> = {
+      user_id: id,
+      ...parsed.data,
+      updated_at: new Date().toISOString(),
+    };
 
+    // Use upsert so overrides work even if the profile row doesn't exist yet.
     const { data: after, error: updateError } = await supabase
       .from('user_profile')
-      .update(patch)
-      .eq('user_id', id)
-      .select('user_id, email, subscription_tier, premium_override_dev, role, updated_at')
+      .upsert(patch, { onConflict: 'user_id' })
+      .select('user_id, email, subscription_tier, premium_override_dev, trial_ends_at, role, updated_at')
       .maybeSingle();
 
     if (updateError) {
-      return NextResponse.json({ error: 'Failed to update user' }, { status: 500 });
+      return NextResponse.json(
+        { error: `Failed to update user: ${updateError.message}`, details: updateError },
+        { status: 500 },
+      );
     }
 
     void logAdminAction({
