@@ -23,13 +23,17 @@ export async function GET(request: NextRequest) {
 
     const { data: profile } = await supabase
       .from('user_profile')
-      .select('display_name')
+      .select('display_name, risk_acknowledged_at, risk_version')
       .eq('user_id', userId)
       .maybeSingle();
 
     return json({
       user: { id: userId, email },
-      profile: { display_name: profile?.display_name ?? null },
+      profile: {
+        display_name: profile?.display_name ?? null,
+        risk_acknowledged_at: (profile as any)?.risk_acknowledged_at ?? null,
+        risk_version: (profile as any)?.risk_version ?? 0,
+      },
     });
   } catch (respOrErr: any) {
     if (respOrErr instanceof NextResponse) {
