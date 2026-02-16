@@ -59,12 +59,6 @@ const nyDow = (date: Date): "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun
   return raw as any;
 };
 
-const dateKeyToDate = (dateKey: string): Date => {
-  // Interpret the date key as a calendar date; use midday UTC to avoid DST/offset edge cases.
-  // Weekday formatting uses the TIMEZONE explicitly.
-  return new Date(`${dateKey}T12:00:00Z`);
-};
-
 type LiveTradeRow = {
   realized_pnl_dollars: number | null;
   realized_pnl_date: string | null;
@@ -82,27 +76,32 @@ const deriveCloseDateKey = (row: Pick<LiveTradeRow, "realized_pnl_date" | "exit_
   return row.realized_pnl_date ?? parseDateKeyFromExitTs(row.exit_timestamp);
 };
 
-const lastDistinctCloseDaysFromTrades = (
-  trades: LiveTradeRow[],
-  count: number,
-): Array<{ date: string; dow: string }> => {
-  const todayKey = nyDateKey(new Date());
-  const seen = new Set<string>();
-  const ordered: string[] = [];
+const isWeekdayDow = (dow: string) => dow === "Mon" || dow === "Tue" || dow === "Wed" || dow === "Thu" || dow === "Fri";
 
-  for (const row of trades) {
-    const key = deriveCloseDateKey(row);
-    if (!key) continue;
-    // Never show future days (can happen with bad timestamps / clock skew).
-    if (key > todayKey) continue;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    ordered.push(key);
-    if (ordered.length >= count) break;
+const startOfNyWeekMonday = (now: Date): Date => {
+  // Compute the Monday of the current week in NY time.
+  // We step backwards based on NY weekday.
+  const cursor = new Date(now);
+  const dow = nyDow(cursor);
+  const map: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+  const back = map[dow] ?? 0;
+  cursor.setUTCDate(cursor.getUTCDate() - back);
+  return cursor;
+};
+
+const currentWeekTradingDays = (now: Date): Array<{ date: string; dow: string }> => {
+  const monday = startOfNyWeekMonday(now);
+  const days: Array<{ date: string; dow: string }> = [];
+  for (let i = 0; i < 5; i += 1) {
+    const d = new Date(monday);
+    d.setUTCDate(monday.getUTCDate() + i);
+    const dow = nyDow(d);
+    if (!isWeekdayDow(dow)) {
+      continue;
+    }
+    days.push({ date: nyDateKey(d), dow });
   }
-
-  const asc = ordered.slice().sort();
-  return asc.map((date) => ({ date, dow: nyDow(dateKeyToDate(date)) }));
+  return days;
 };
 
 export async function GET(request: NextRequest) {
@@ -148,23 +147,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Pull a recent window of closed trades and derive the *last 5 distinct close dates* from actual data.
-  // We intentionally don't use calendar weekdays here — holidays / no-trade days should be skipped.
-  const { data: recentTrades, error: recentTradesError } = await supabaseAdmin
-    .from("live_trades")
-    .select("realized_pnl_dollars, realized_pnl_date, exit_timestamp")
-    .eq("strategy", STRATEGY)
-    .eq("engine_key", ENGINE_KEY)
-    .not("realized_pnl_dollars", "is", null)
-    .not("exit_timestamp", "is", null)
-    .order("exit_timestamp", { ascending: false })
-    .limit(2000);
+  const now = new Date();
+  const todayKey = nyDateKey(now);
 
-  if (recentTradesError) {
-    return json(request, { error: "Failed to load weekly performance" }, { status: 500 });
-  }
-
-  const tradingDays = lastDistinctCloseDaysFromTrades((recentTrades ?? []) as LiveTradeRow[], 5);
+  const tradingDays = currentWeekTradingDays(now);
   const startDate = tradingDays[0]?.date ?? null;
   const endDate = tradingDays[tradingDays.length - 1]?.date ?? null;
 
@@ -178,26 +164,54 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const byDate = new Map<string, number>();
-  for (const day of tradingDays) {
-    byDate.set(day.date, 0);
+  // Pull closed trades in the week window.
+  const { data: weekTrades, error: weekTradesError } = await supabaseAdmin
+    .from("live_trades")
+    .select("realized_pnl_dollars, realized_pnl_date, exit_timestamp")
+    .eq("strategy", STRATEGY)
+    .eq("engine_key", ENGINE_KEY)
+    .not("realized_pnl_dollars", "is", null)
+    .not("exit_timestamp", "is", null)
+    .gte("realized_pnl_date", startDate)
+    .lte("realized_pnl_date", endDate)
+    .limit(5000);
+
+  if (weekTradesError) {
+    return json(request, { error: "Failed to load weekly performance" }, { status: 500 });
   }
 
-  for (const row of (recentTrades ?? []) as LiveTradeRow[]) {
+  const byDate = new Map<string, { pnl: number; trades: number }>();
+  for (const day of tradingDays) {
+    byDate.set(day.date, { pnl: 0, trades: 0 });
+  }
+
+  for (const row of (weekTrades ?? []) as LiveTradeRow[]) {
     const realized = typeof row.realized_pnl_dollars === "number" ? row.realized_pnl_dollars : 0;
     const key = deriveCloseDateKey(row);
     if (!key) continue;
-    if (!byDate.has(key)) continue;
-    byDate.set(key, (byDate.get(key) ?? 0) + realized);
+    const bucket = byDate.get(key);
+    if (!bucket) continue;
+    bucket.pnl += realized;
+    bucket.trades += 1;
   }
 
-  const days = tradingDays.map((d) => ({
-    date: d.date,
-    dow: d.dow,
-    realized_pnl: Math.round((byDate.get(d.date) ?? 0) * 100) / 100,
-  }));
+  const days = tradingDays.map((d) => {
+    const bucket = byDate.get(d.date) ?? { pnl: 0, trades: 0 };
+    const rounded = Math.round(bucket.pnl * 100) / 100;
 
-  const total = Math.round(days.reduce((sum, d) => sum + d.realized_pnl, 0) * 100) / 100;
+    // If the day is in the past (or today) and there are no trades, label as market closed.
+    // We cannot reliably distinguish "no trades" vs "holiday" here, but the UI requested a closed-market label.
+    const marketClosed = d.date <= todayKey && bucket.trades === 0;
+
+    return {
+      date: d.date,
+      dow: d.dow,
+      realized_pnl: rounded,
+      market_closed: marketClosed,
+    };
+  });
+
+  const total = Math.round(days.reduce((sum, d: any) => sum + Number(d.realized_pnl ?? 0), 0) * 100) / 100;
 
   return json(request, {
     timezone: TIMEZONE,
