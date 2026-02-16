@@ -19,15 +19,7 @@ export type Entitlement = {
 export type AuthUser = { id: string; email: string | null };
 
 export async function getUserFromRequest(request: NextRequest): Promise<AuthUser> {
-  const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
-  if (!authHeader) {
-    throw NextResponse.json(
-      { error: 'Missing Authorization header' },
-      { status: 401 },
-    );
-  }
-
-  // Prefer cookie session when available (Next app).
+  // Prefer cookie session when available (Next app / proxied requests carrying cookies).
   const authClient = await createServerClient();
   const {
     data: { user: cookieUser },
@@ -37,10 +29,11 @@ export async function getUserFromRequest(request: NextRequest): Promise<AuthUser
     return { id: cookieUser.id, email: cookieUser.email ?? null };
   }
 
+  // Fallback to Bearer token (Vite frontend / API clients).
   const token = getBearerToken(request);
   if (!token) {
     throw NextResponse.json(
-      { error: 'Missing Bearer token' },
+      { error: 'Missing Authorization header' },
       { status: 401 },
     );
   }
