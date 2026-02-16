@@ -10,12 +10,6 @@ export async function GET(request: NextRequest) {
   const adminCtx = await requireAdmin(request);
   if (adminCtx instanceof NextResponse) return adminCtx;
 
-  console.log('[whitelist] env check', {
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.slice(0, 10),
-    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 10),
-  });
-
   const searchParams = request.nextUrl.searchParams;
   const q = (searchParams.get('q') || '').trim();
   const enabledFilter = searchParams.get('enabled');
@@ -58,12 +52,6 @@ export async function GET(request: NextRequest) {
     console.error('[whitelist] GET failed', error.message);
     return NextResponse.json({ error: 'Failed to load whitelist' }, { status: 500 });
   }
-
-  console.log('[whitelist] query result', {
-    rows: rows?.length,
-    total: stats.total,
-    envUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  });
 
   return NextResponse.json({
     rows: rows ?? [],
