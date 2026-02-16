@@ -59,6 +59,99 @@ function toNumber(value: number | string | null | undefined) {
 
 type ServiceSupabaseClient = SupabaseClient<any, any, any, any, any>
 
+function baseSwingDefaults() {
+  return {
+    // These are descriptive defaults used across swing engines.
+    starting_equity: 100000,
+    risk_pct_per_trade: 0.75,
+    max_per_position_pct: 25,
+    max_portfolio_allocation_pct: 80,
+    max_concurrent_positions: 10,
+    min_ticket_usd: 1000,
+  };
+}
+
+function defaultEngineParams(params: {
+  versionKey: string;
+  engineKey: string;
+  engineVersion: string;
+  runMode: string;
+  isPrimary: boolean;
+  isCrypto: boolean;
+}): Record<string, unknown> {
+  const { versionKey, engineKey, engineVersion, runMode, isPrimary, isCrypto } = params;
+  const v = (versionKey || engineVersion || '').toUpperCase();
+  const k = (engineKey || '').toUpperCase();
+
+  // Primary (live) swing engine defaults
+  if (isPrimary && k === 'SWING') {
+    return {
+      ...baseSwingDefaults(),
+      strategy_type: 'Baseline swing (live)',
+      tp_activation: '≈ +1.5R',
+      trailing_distance: '≈ 0.75R',
+      time_exit: 'contextual',
+    };
+  }
+
+  // Shadow swing variants
+  if (runMode === 'SHADOW' && k === 'SWING') {
+    if (v === 'SWING_V2_ROBUST') {
+      return {
+        ...baseSwingDefaults(),
+        strategy_type: 'Swing shadow (robust profit locking)',
+        tp_activation: '≈ +1.0R',
+        trailing_distance: '≈ 0.5R',
+        time_exit: '≈ +0.4R into close',
+        overnight_hygiene: 'Enabled',
+      };
+    }
+
+    if (v === 'SHADOW_BRAKES_V1') {
+      return {
+        ...baseSwingDefaults(),
+        strategy_type: 'Swing shadow (daily brakes)',
+      };
+    }
+
+    if (v === 'SWING_SHADOW_CTX_V1') {
+      return {
+        ...baseSwingDefaults(),
+        strategy_type: 'Swing shadow (market-context gate)',
+        context_policy: 'CTX_V1_MINIMAL',
+      };
+    }
+
+    // Generic swing shadow fallback
+    return {
+      ...baseSwingDefaults(),
+      strategy_type: 'Swing shadow',
+    };
+  }
+
+  // Quick profit / scalp family
+  if (v === 'QUICK_PROFIT_V1' || v === 'SCALP_V1_MICROEDGE') {
+    return {
+      starting_equity: 100000,
+      strategy_type: v === 'QUICK_PROFIT_V1' ? 'Quick profit shadow' : 'Scalp shadow',
+    };
+  }
+
+  // Crypto shadow
+  if (isCrypto || v === 'V1' || k.includes('CRYPTO')) {
+    return {
+      starting_equity: 100000,
+      strategy_type: 'Crypto shadow',
+      primary_timeframe: '15m',
+      risk_pct_per_trade: 0.3,
+      max_concurrent_positions: 3,
+      max_daily_drawdown_pct: 2,
+    };
+  }
+
+  return { starting_equity: 100000 };
+}
+
 async function fetchStockShadowData(
   supabase: ServiceSupabaseClient,
   params: { engine_key: string; engine_version: string; run_mode: string },
@@ -621,7 +714,17 @@ export async function GET(request: NextRequest) {
         .slice(0, 100) // Return up to 100 recent trades for subpage display
 
       // Fetch engine parameters if applicable
-      let engineParams: any = {}
+      // Always include a stable baseline set of defaults so Admin v2 can derive a useful description.
+      const defaults = defaultEngineParams({
+        versionKey,
+        engineKey: sourceEngineKey,
+        engineVersion: sourceEngineVersion,
+        runMode: String(version.run_mode ?? ''),
+        isPrimary,
+        isCrypto,
+      })
+
+      let engineParams: any = { ...defaults }
 
       // Attach brakes config from engine_versions.settings when present
       const rawSettings = (version as any).settings || null
