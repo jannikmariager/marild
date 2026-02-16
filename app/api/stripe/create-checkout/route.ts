@@ -48,6 +48,11 @@ export async function POST(req: NextRequest) {
     }
 
     const stripeClient = requireStripe();
+
+    // Always redirect back into the *new* frontend app after checkout, regardless of which backend domain handled the API request.
+    // Use env override if present, otherwise default to production www.marild.com.
+    const appBaseUrl = (process.env.APP_BASE_URL ?? 'https://www.marild.com').replace(/\/$/, '');
+
     const session = await stripeClient.checkout.sessions.create({
       mode: 'subscription',
       customer_email: user.email,
@@ -57,8 +62,8 @@ export async function POST(req: NextRequest) {
           quantity: 1,
         },
       ],
-      success_url: `${req.nextUrl.origin}/dashboard?checkout=success`,
-      cancel_url: `${req.nextUrl.origin}/pricing?checkout=cancelled`,
+      success_url: `${appBaseUrl}/app?checkout=success`,
+      cancel_url: `${appBaseUrl}/pricing?checkout=cancelled`,
     });
 
     return NextResponse.json({ id: session.id, url: session.url });
