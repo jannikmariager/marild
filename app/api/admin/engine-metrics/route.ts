@@ -699,6 +699,7 @@ export async function GET(request: NextRequest) {
       }
 
       metrics.push({
+        id: (version as any).id ?? null,
         engine_version: version.engine_version,
         engine_key: version.engine_key,
         run_mode: version.run_mode,

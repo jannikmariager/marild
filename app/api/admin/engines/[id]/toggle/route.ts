@@ -67,7 +67,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
     void logAdminAction({
       adminId: adminCtx.adminId,
-      action: 'engines.toggle',
+      action: 'engine.toggle',
       entity: `engine_versions:${id}`,
       before,
       after,

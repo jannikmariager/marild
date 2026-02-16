@@ -6,6 +6,12 @@ type AdminContext = {
   adminEmail: string | null;
 };
 
+// Guardrail: only these emails may access admin routes, even if role='admin'.
+const ALLOWED_ADMIN_EMAILS = new Set([
+  'jannikmariager@gmail.com',
+  'jannikmariager@hotmail.com',
+]);
+
 const json = (data: unknown, init?: ResponseInit) => NextResponse.json(data, init);
 
 function getBearerToken(request: NextRequest): string | null {
@@ -67,6 +73,11 @@ export async function requireAdmin(request: NextRequest): Promise<AdminContext |
   }
 
   if ((profile?.role || 'user') !== 'admin') {
+    return json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  const email = (user.email || '').trim().toLowerCase();
+  if (!email || !ALLOWED_ADMIN_EMAILS.has(email)) {
     return json({ error: 'Forbidden' }, { status: 403 });
   }
 

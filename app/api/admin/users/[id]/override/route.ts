@@ -61,7 +61,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
     void logAdminAction({
       adminId: adminCtx.adminId,
-      action: 'users.override',
+      action: 'user.override',
       entity: `user_profile:${id}`,
       before,
       after,
