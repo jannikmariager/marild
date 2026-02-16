@@ -6,41 +6,71 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/performance/trades?limit=50&offset=0
- * Returns paginated list of simulated trades
- * PRO-only feature
+ * Public preview: add public=1 to bypass entitlement checks.
+ * Optional filters: ticker, outcome=win|loss, start=YYYY-MM-DD, end=YYYY-MM-DD
  */
 export async function GET(request: Request) {
   try {
-    try {
-      await requireActiveEntitlement(request as any);
-    } catch (resp: any) {
-      if (resp instanceof Response) {
-        return resp as any;
+    const { searchParams } = new URL(request.url);
+    const isPublicPreview = searchParams.get('public') === '1';
+
+    if (!isPublicPreview) {
+      try {
+        await requireActiveEntitlement(request as any);
+      } catch (resp: any) {
+        if (resp instanceof Response) {
+          return resp as any;
+        }
+        throw resp;
       }
-      throw resp;
     }
 
     const supabase = await createClient();
-    const { searchParams } = new URL(request.url);
-    
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
-    const offset = parseInt(searchParams.get('offset') || '0', 10);
+
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 200));
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0);
+
+    const ticker = (searchParams.get('ticker') || '').trim().toUpperCase();
+    const outcome = (searchParams.get('outcome') || '').trim().toLowerCase(); // win|loss
+    const start = (searchParams.get('start') || '').trim();
+    const end = (searchParams.get('end') || '').trim();
 
     const isLocked = false;
 
-    // Fetch total count from live_trades table
-    const { count, error: countError } = await supabase
-      .from('live_trades')
-      .select('*', { count: 'exact', head: true });
+    // Base query: closed trades only, most recent first.
+    const applyFilters = (q: any) => {
+      let qb = q
+        .from('live_trades')
+        .select(
+          'ticker, strategy, entry_timestamp, entry_price, exit_timestamp, exit_price, exit_reason, realized_pnl_dollars, realized_pnl_r, size_shares, side',
+          { count: 'exact' },
+        )
+        .not('exit_timestamp', 'is', null);
 
-    if (countError) {
-      console.error('[performance/trades] Error counting trades:', countError);
-    }
+      if (ticker) {
+        qb = qb.eq('ticker', ticker);
+      }
+
+      if (outcome === 'win') {
+        qb = qb.gt('realized_pnl_dollars', 0);
+      } else if (outcome === 'loss') {
+        qb = qb.lt('realized_pnl_dollars', 0);
+      }
+
+      if (/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+        qb = qb.gte('exit_timestamp', `${start}T00:00:00.000Z`);
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+        qb = qb.lte('exit_timestamp', `${end}T23:59:59.999Z`);
+      }
+
+      return qb;
+    };
+
+    const base = applyFilters(supabase);
 
     // Fetch paginated live trades
-    const { data: trades, error: tradesError } = await supabase
-      .from('live_trades')
-      .select('ticker, strategy, entry_timestamp, entry_price, exit_timestamp, exit_price, exit_reason, realized_pnl_dollars, realized_pnl_r, size_shares, side')
+    const { data: trades, error: tradesError, count } = await base
       .order('exit_timestamp', { ascending: false })
       .range(offset, offset + limit - 1);
 
