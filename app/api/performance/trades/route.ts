@@ -125,6 +125,7 @@ export async function GET(request: Request) {
         exit_price: trade.exit_price,
         result: trade.exit_reason, // TP_HIT, SL_HIT, EOD_FLATTEN, etc.
         pnl_pct: pnlPct,
+        pnl_usd: trade.realized_pnl_dollars,
         bars_held: null, // Not applicable for live trades
       };
     });
