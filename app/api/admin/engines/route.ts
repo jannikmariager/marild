@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
             max_drawdown: m.max_drawdown ?? null,
             current_equity: m.current_equity ?? null,
             display_label: m.display_label ?? null,
+            engine_params: m.engine_params ?? null,
           })),
         },
         { status: 200 },
