@@ -4,6 +4,20 @@ import { requireActiveEntitlement } from '@/app/api/_lib/entitlement';
 
 export const dynamic = 'force-dynamic';
 
+type LiveTradeRow = {
+  ticker: string | null;
+  strategy: string | null;
+  entry_timestamp: string | null;
+  entry_price: number | null;
+  exit_timestamp: string | null;
+  exit_price: number | null;
+  exit_reason: string | null;
+  realized_pnl_dollars: number | null;
+  realized_pnl_r: number | null;
+  size_shares: number | null;
+  side: string | null;
+};
+
 /**
  * GET /api/performance/trades?limit=50&offset=0
  * Public preview: add public=1 to bypass entitlement checks.
@@ -82,17 +96,21 @@ export async function GET(request: Request) {
       );
     }
 
+    const tradeRows = (trades || []) as LiveTradeRow[];
+
     // Format trades for response - map live trades to expected format
-    const formattedTrades = (trades || []).map((trade) => {
+    const formattedTrades = tradeRows.map((trade: LiveTradeRow) => {
       const side = (trade.side || 'LONG') as 'LONG' | 'SHORT';
 
       // For open trades (no exit yet), we don't have a meaningful P&L %
       let pnlPct: number | null = null;
 
-      if (trade.exit_price !== null && trade.entry_price > 0) {
+      const entry = trade.entry_price;
+      const exit = trade.exit_price;
+      if (typeof exit === 'number' && Number.isFinite(exit) && typeof entry === 'number' && Number.isFinite(entry) && entry > 0) {
         const rawPnlPct = side === 'SHORT'
-          ? ((trade.entry_price - trade.exit_price) / trade.entry_price) * 100
-          : ((trade.exit_price - trade.entry_price) / trade.entry_price) * 100;
+          ? ((entry - exit) / entry) * 100
+          : ((exit - entry) / entry) * 100;
 
         pnlPct = Math.round(rawPnlPct * 100) / 100;
       }
