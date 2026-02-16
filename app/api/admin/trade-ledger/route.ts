@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 
   let supabase;
   try {
-    supabase = getAdminSupabaseOrThrow();
+    supabase = getAdminSupabaseOrThrow() as any;
   } catch (respOrErr: any) {
     if (respOrErr instanceof NextResponse) return respOrErr;
     return NextResponse.json({ error: 'Server not configured' }, { status: 500 });

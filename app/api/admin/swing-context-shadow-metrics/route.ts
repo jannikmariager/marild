@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 
   let supabase
   try {
-    supabase = getAdminSupabaseOrThrow()
+    supabase = getAdminSupabaseOrThrow() as any
   } catch (respOrErr: any) {
     if (respOrErr instanceof NextResponse) return respOrErr
     return NextResponse.json({ error: 'Server not configured' }, { status: 500 })
@@ -65,11 +65,11 @@ export async function GET(request: NextRequest) {
     const startingEquity = Number(portfolio?.starting_equity ?? 100000)
     const currentEquity = Number(portfolio?.equity ?? startingEquity)
 
-    const closedTrades = (trades || []).filter((t) => t.closed_at)
-    const winCount = closedTrades.filter((t) => Number(t.realized_pnl ?? 0) > 0).length
-    const lossCount = closedTrades.filter((t) => Number(t.realized_pnl ?? 0) < 0).length
-    const totalPnL = closedTrades.reduce((sum, t) => sum + Number(t.realized_pnl ?? 0), 0)
-    const totalR = closedTrades.reduce((sum, t) => sum + Number(t.realized_r ?? 0), 0)
+    const closedTrades = (trades || []).filter((t: any) => (t as any).closed_at)
+    const winCount = closedTrades.filter((t: any) => Number((t as any).realized_pnl ?? 0) > 0).length
+    const lossCount = closedTrades.filter((t: any) => Number((t as any).realized_pnl ?? 0) < 0).length
+    const totalPnL = closedTrades.reduce((sum: number, t: any) => sum + Number((t as any).realized_pnl ?? 0), 0)
+    const totalR = closedTrades.reduce((sum: number, t: any) => sum + Number((t as any).realized_r ?? 0), 0)
 
     const realizedPnL = Number(totalPnL.toFixed(2))
     const impliedUnrealized = currentEquity - startingEquity - realizedPnL
@@ -300,7 +300,7 @@ async function loadLatestMarketContextDecision(
       return null
     }
 
-    return (data as MarketContextDecisionRow) ?? null
+    return (data as unknown as MarketContextDecisionRow) ?? null
   } catch (err) {
     console.warn('[swing-context-shadow-metrics] Unexpected error loading market context decision:', err)
     return null
@@ -333,11 +333,11 @@ async function loadLiveSwingEquitySummary(
 
     const startingEquity = 100000
     const realized = (closedTrades || []).reduce(
-      (sum, row) => sum + Number(row.realized_pnl_dollars ?? 0),
+      (sum: number, row: any) => sum + Number(row?.realized_pnl_dollars ?? 0),
       0,
     )
     const unrealized = (openPositions || []).reduce(
-      (sum, row) => sum + Number(row.unrealized_pnl_dollars ?? 0),
+      (sum: number, row: any) => sum + Number(row?.unrealized_pnl_dollars ?? 0),
       0,
     )
 

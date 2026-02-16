@@ -325,7 +325,7 @@ export async function GET(request: NextRequest) {
 
   let supabase;
   try {
-    supabase = getAdminSupabaseOrThrow();
+    supabase = getAdminSupabaseOrThrow() as any;
   } catch (respOrErr: any) {
     if (respOrErr instanceof NextResponse) return respOrErr;
     return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
@@ -344,9 +344,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const { portfolio, trades, openPositions, closedPositions } = data;
+    const { portfolio, trades, openPositions, closedPositions } = data as any;
 
-    const closedTrades = (trades || []).filter((t) => t.closed_at);
+    const closedTrades = ((trades as any[]) || []).filter((t: any) => t.closed_at);
     const winCount = closedTrades.filter((t) => Number(t.realized_pnl ?? 0) > 0).length;
     const lossCount = closedTrades.filter((t) => Number(t.realized_pnl ?? 0) < 0).length;
     const totalPnL = closedTrades.reduce((sum, t) => sum + Number(t.realized_pnl ?? 0), 0);

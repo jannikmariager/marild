@@ -18,7 +18,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   let supabase;
   try {
-    supabase = getAdminSupabaseOrThrow();
+    supabase = getAdminSupabaseOrThrow() as any;
   } catch (respOrErr: any) {
     if (respOrErr instanceof NextResponse) return respOrErr;
     return NextResponse.json({ error: 'Server not configured' }, { status: 500 });

@@ -14,43 +14,49 @@ export async function GET(request: NextRequest) {
 
   let supabase;
   try {
-    supabase = getAdminSupabaseOrThrow();
+    supabase = getAdminSupabaseOrThrow() as any;
   } catch (respOrErr: any) {
     if (respOrErr instanceof NextResponse) return respOrErr;
     return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
   }
 
   // Flags
-  const { data: flagsData, error: flagsError } = await supabase
+  const { data: flagsDataRaw, error: flagsError } = await supabase
     .from('app_feature_flags')
     .select('key, bool_value, text_array_value')
     .in('key', [FLAG_ENABLED_KEY, FLAG_ALLOWLIST_KEY]);
   if (flagsError) return NextResponse.json({ error: 'Failed to load flags' }, { status: 500 });
 
-  const enabled = Boolean(flagsData?.find((f) => f.key === FLAG_ENABLED_KEY)?.bool_value);
-  const allowlist = (flagsData?.find((f) => f.key === FLAG_ALLOWLIST_KEY)?.text_array_value as string[]) || [];
+  const flagsData = (flagsDataRaw ?? []) as any[];
+
+  const enabled = Boolean(flagsData.find((f: any) => f.key === FLAG_ENABLED_KEY)?.bool_value);
+  const allowlist = (flagsData.find((f: any) => f.key === FLAG_ALLOWLIST_KEY)?.text_array_value as string[]) || [];
 
   // Owners (limit for UI)
-  const { data: owners, error: ownersError } = await supabase
+  const { data: ownersRaw, error: ownersError } = await supabase
     .from('ticker_engine_owner')
     .select('symbol, active_engine_key, active_engine_version, locked_until, last_promotion_at, updated_at, last_score')
     .order('updated_at', { ascending: false })
     .limit(200);
   if (ownersError) return NextResponse.json({ error: 'Failed to load owners' }, { status: 500 });
+
+  const owners = (ownersRaw ?? []) as any[];
+
   let comparisons: Record<string, any[]> = {};
-  const ownerSymbols = (owners || []).map((o) => o.symbol);
+  const ownerSymbols = owners.map((o: any) => o.symbol).filter(Boolean);
   if (ownerSymbols.length > 0) {
-    const { data: scoreRows, error: scoresError } = await supabase
+    const { data: scoreRowsRaw, error: scoresError } = await supabase
       .from('engine_ticker_score_history')
       .select('symbol, engine_key, engine_version, score, expectancy_r, max_dd_r, trades')
       .eq('window_days', 60)
       .in('symbol', ownerSymbols)
       .order('score', { ascending: false })
       .limit(ownerSymbols.length * 5);
-    if (!scoresError && scoreRows) {
+    if (!scoresError) {
+      const scoreRows = (scoreRowsRaw ?? []) as any[];
       const grouped = new Map<string, any[]>();
       for (const row of scoreRows) {
-        const list = grouped.get(row.symbol) ?? [];
+        const list = grouped.get((row as any).symbol) ?? [];
         if (list.length >= 3) continue;
         list.push({
           engine_key: row.engine_key,
@@ -68,18 +74,20 @@ export async function GET(request: NextRequest) {
   }
 
   // Promotion log (recent)
-  const { data: promotions, error: promoError } = await supabase
+  const { data: promotionsRaw, error: promoError } = await supabase
     .from('promotion_log')
     .select('ts, symbol, from_engine_key, to_engine_key, from_version, to_version, delta, applied, reason, pending_reason, decision_mode, locked_until')
     .order('ts', { ascending: false })
     .limit(100);
   if (promoError) return NextResponse.json({ error: 'Failed to load promotion log' }, { status: 500 });
 
+  const promotions = (promotionsRaw ?? []) as any[];
+
   return NextResponse.json({
     enabled,
     allowlist,
-    owners: owners || [],
-    promotions: promotions || [],
+    owners,
+    promotions,
     comparisons,
   });
 }
@@ -90,7 +98,7 @@ export async function POST(request: NextRequest) {
 
   let supabase;
   try {
-    supabase = getAdminSupabaseOrThrow();
+    supabase = getAdminSupabaseOrThrow() as any;
   } catch (respOrErr: any) {
     if (respOrErr instanceof NextResponse) return respOrErr;
     return NextResponse.json({ error: 'Server not configured' }, { status: 500 });

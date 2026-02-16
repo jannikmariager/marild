@@ -195,7 +195,7 @@ export async function GET(request: NextRequest) {
 
   let supabase
   try {
-    supabase = getAdminSupabaseOrThrow()
+    supabase = getAdminSupabaseOrThrow() as any
   } catch (respOrErr: any) {
     if (respOrErr instanceof NextResponse) return respOrErr
     return NextResponse.json({ error: 'Server not configured' }, { status: 500 })
@@ -283,7 +283,7 @@ export async function GET(request: NextRequest) {
           continue
         }
 
-        tradeData = (trades || []).map((trade) => ({
+        tradeData = (trades || []).map((trade: any) => ({
           ticker: trade.ticker,
           side: trade.side,
           entry_timestamp: trade.entry_timestamp,
@@ -366,7 +366,7 @@ export async function GET(request: NextRequest) {
 
           if (!openError && openPositions) {
             unrealizedPnl = openPositions.reduce(
-              (sum, pos) => sum + Number(pos.unrealized_pnl ?? 0),
+              (sum: number, pos: any) => sum + Number(pos.unrealized_pnl ?? 0),
               0,
             )
           }
@@ -556,7 +556,7 @@ export async function GET(request: NextRequest) {
           console.error(`Error fetching live_positions for ${version.engine_version}:`, openPositionsError)
         } else {
           unrealizedPnl = (openPositions || []).reduce(
-            (sum, pos) => sum + Number(pos.unrealized_pnl_dollars ?? 0),
+            (sum: number, pos: any) => sum + Number(pos.unrealized_pnl_dollars ?? 0),
             0,
           )
         }
