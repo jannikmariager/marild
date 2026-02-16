@@ -59,24 +59,10 @@ const nyDow = (date: Date): "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun
   return raw as any;
 };
 
-const lastTradingDays = (count: number): Array<{ date: string; dow: string }> => {
-  const days: Array<{ date: string; dow: string }> = [];
-  const cursor = new Date();
-
-  // walk back calendar days, selecting Mon-Fri in America/New_York
-  while (days.length < count) {
-    const dow = nyDow(cursor);
-    if (dow !== "Sat" && dow !== "Sun") {
-      const key = nyDateKey(cursor);
-      // avoid duplicates around DST / formatting
-      if (!days.some((d) => d.date === key)) {
-        days.push({ date: key, dow });
-      }
-    }
-    cursor.setUTCDate(cursor.getUTCDate() - 1);
-  }
-
-  return days.reverse();
+const dateKeyToDate = (dateKey: string): Date => {
+  // Interpret the date key as a calendar date; use midday UTC to avoid DST/offset edge cases.
+  // Weekday formatting uses the TIMEZONE explicitly.
+  return new Date(`${dateKey}T12:00:00Z`);
 };
 
 type LiveTradeRow = {
@@ -90,6 +76,33 @@ const parseDateKeyFromExitTs = (exitTimestamp: string | null): string | null => 
   const d = new Date(exitTimestamp);
   if (Number.isNaN(d.getTime())) return null;
   return nyDateKey(d);
+};
+
+const deriveCloseDateKey = (row: Pick<LiveTradeRow, "realized_pnl_date" | "exit_timestamp">): string | null => {
+  return row.realized_pnl_date ?? parseDateKeyFromExitTs(row.exit_timestamp);
+};
+
+const lastDistinctCloseDaysFromTrades = (
+  trades: LiveTradeRow[],
+  count: number,
+): Array<{ date: string; dow: string }> => {
+  const todayKey = nyDateKey(new Date());
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+
+  for (const row of trades) {
+    const key = deriveCloseDateKey(row);
+    if (!key) continue;
+    // Never show future days (can happen with bad timestamps / clock skew).
+    if (key > todayKey) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordered.push(key);
+    if (ordered.length >= count) break;
+  }
+
+  const asc = ordered.slice().sort();
+  return asc.map((date) => ({ date, dow: nyDow(dateKeyToDate(date)) }));
 };
 
 export async function GET(request: NextRequest) {
@@ -135,9 +148,25 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const tradingDays = lastTradingDays(5);
-  const startDate = tradingDays[0]?.date;
-  const endDate = tradingDays[tradingDays.length - 1]?.date;
+  // Pull a recent window of closed trades and derive the *last 5 distinct close dates* from actual data.
+  // We intentionally don't use calendar weekdays here — holidays / no-trade days should be skipped.
+  const { data: recentTrades, error: recentTradesError } = await supabaseAdmin
+    .from("live_trades")
+    .select("realized_pnl_dollars, realized_pnl_date, exit_timestamp")
+    .eq("strategy", STRATEGY)
+    .eq("engine_key", ENGINE_KEY)
+    .not("realized_pnl_dollars", "is", null)
+    .not("exit_timestamp", "is", null)
+    .order("exit_timestamp", { ascending: false })
+    .limit(2000);
+
+  if (recentTradesError) {
+    return json(request, { error: "Failed to load weekly performance" }, { status: 500 });
+  }
+
+  const tradingDays = lastDistinctCloseDaysFromTrades((recentTrades ?? []) as LiveTradeRow[], 5);
+  const startDate = tradingDays[0]?.date ?? null;
+  const endDate = tradingDays[tradingDays.length - 1]?.date ?? null;
 
   if (!startDate || !endDate) {
     return json(request, {
@@ -149,28 +178,14 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Query the smallest reasonable window and then attribute PnL to the close-date key.
-  const { data: trades, error: tradesError } = await supabaseAdmin
-    .from("live_trades")
-    .select("realized_pnl_dollars, realized_pnl_date, exit_timestamp")
-    .eq("strategy", STRATEGY)
-    .eq("engine_key", ENGINE_KEY)
-    .not("realized_pnl_dollars", "is", null)
-    .gte("realized_pnl_date", startDate)
-    .lte("realized_pnl_date", endDate);
-
-  if (tradesError) {
-    return json(request, { error: "Failed to load weekly performance" }, { status: 500 });
-  }
-
   const byDate = new Map<string, number>();
   for (const day of tradingDays) {
     byDate.set(day.date, 0);
   }
 
-  for (const row of (trades ?? []) as LiveTradeRow[]) {
+  for (const row of (recentTrades ?? []) as LiveTradeRow[]) {
     const realized = typeof row.realized_pnl_dollars === "number" ? row.realized_pnl_dollars : 0;
-    const key = row.realized_pnl_date ?? parseDateKeyFromExitTs(row.exit_timestamp);
+    const key = deriveCloseDateKey(row);
     if (!key) continue;
     if (!byDate.has(key)) continue;
     byDate.set(key, (byDate.get(key) ?? 0) + realized);
