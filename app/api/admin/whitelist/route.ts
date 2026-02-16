@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import type { SupabaseClient } from '@supabase/supabase-js';
-
-const ALLOWED_EMAILS = ['jannikmariager@gmail.com'];
+import { requireAdmin, getAdminSupabaseOrThrow, logAdminAction } from '@/app/api/_lib/admin';
 const MAX_NOTES_LENGTH = 2000;
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET(request: NextRequest) {
-  const user = await getUser(request);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!isAllowed(user.email)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const adminCtx = await requireAdmin(request);
+  if (adminCtx instanceof NextResponse) return adminCtx;
 
   console.log('[whitelist] env check', {
     url: process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -23,7 +22,13 @@ export async function GET(request: NextRequest) {
   const limit = clampNumber(searchParams.get('limit'), 1, 500, 200);
   const offset = clampNumber(searchParams.get('offset'), 0, 10_000, 0);
 
-  const supabase = supabaseAdmin;
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+  }
   let query = supabase
     .from('ticker_whitelist')
     .select('symbol, is_enabled, is_top8, manual_priority, notes, created_at, updated_at', { count: 'exact' })
@@ -72,9 +77,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const user = await getUser(request);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!isAllowed(user.email)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const adminCtx = await requireAdmin(request);
+  if (adminCtx instanceof NextResponse) return adminCtx;
 
   const body = await request.json();
   const action = body?.action;
@@ -82,24 +86,51 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing action' }, { status: 400 });
   }
 
-  const supabase = supabaseAdmin;
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+  }
 
   try {
     switch (action) {
-      case 'upsert':
-        return await handleUpsert(body, supabase);
-      case 'bulk_upsert':
-        return await handleBulkUpsert(body, supabase);
-      case 'set_enabled':
-        return await handlePatch(body, supabase, { is_enabled: parseBoolean(body.is_enabled, true) });
-      case 'set_top8':
-        return await handlePatch(body, supabase, { is_top8: Boolean(body.is_top8) });
-      case 'set_priority':
-        return await handlePatch(body, supabase, { manual_priority: sanitizePriority(body.manual_priority) });
-      case 'set_notes':
-        return await handlePatch(body, supabase, { notes: sanitizeNotes(body.notes) });
-      case 'delete':
-        return await handleDelete(body, supabase);
+      case 'upsert': {
+        const resp = await handleUpsert(body, supabase);
+        void logAdminAction({ adminId: adminCtx.adminId, action: 'whitelist.upsert', entity: 'ticker_whitelist', before: null, after: body });
+        return resp;
+      }
+      case 'bulk_upsert': {
+        const resp = await handleBulkUpsert(body, supabase);
+        void logAdminAction({ adminId: adminCtx.adminId, action: 'whitelist.bulk_upsert', entity: 'ticker_whitelist', before: null, after: body });
+        return resp;
+      }
+      case 'set_enabled': {
+        const resp = await handlePatch(body, supabase, { is_enabled: parseBoolean(body.is_enabled, true) });
+        void logAdminAction({ adminId: adminCtx.adminId, action: 'whitelist.set_enabled', entity: 'ticker_whitelist', before: null, after: body });
+        return resp;
+      }
+      case 'set_top8': {
+        const resp = await handlePatch(body, supabase, { is_top8: Boolean(body.is_top8) });
+        void logAdminAction({ adminId: adminCtx.adminId, action: 'whitelist.set_top8', entity: 'ticker_whitelist', before: null, after: body });
+        return resp;
+      }
+      case 'set_priority': {
+        const resp = await handlePatch(body, supabase, { manual_priority: sanitizePriority(body.manual_priority) });
+        void logAdminAction({ adminId: adminCtx.adminId, action: 'whitelist.set_priority', entity: 'ticker_whitelist', before: null, after: body });
+        return resp;
+      }
+      case 'set_notes': {
+        const resp = await handlePatch(body, supabase, { notes: sanitizeNotes(body.notes) });
+        void logAdminAction({ adminId: adminCtx.adminId, action: 'whitelist.set_notes', entity: 'ticker_whitelist', before: null, after: body });
+        return resp;
+      }
+      case 'delete': {
+        const resp = await handleDelete(body, supabase);
+        void logAdminAction({ adminId: adminCtx.adminId, action: 'whitelist.delete', entity: 'ticker_whitelist', before: null, after: body });
+        return resp;
+      }
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
@@ -213,31 +244,6 @@ async function fetchStats(supabase: AdminSupabase) {
   };
 }
 
-async function getUser(request: NextRequest) {
-  const supabaseAuth = await createClient();
-  const {
-    data: { user: cookieUser },
-  } = await supabaseAuth.auth.getUser();
-
-  if (cookieUser) return cookieUser;
-
-  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice('Bearer '.length).trim();
-    if (token.length > 0) {
-      const {
-        data: { user: tokenUser },
-      } = await supabaseAuth.auth.getUser(token);
-      if (tokenUser) return tokenUser;
-    }
-  }
-  return null;
-}
-
-function isAllowed(email?: string | null) {
-  if (!email) return false;
-  return ALLOWED_EMAILS.includes(email.toLowerCase());
-}
 
 function normalizeSymbol(value: unknown) {
   if (!value || typeof value !== 'string') return '';

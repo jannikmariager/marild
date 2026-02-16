@@ -1,45 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getEngineStyleLabel } from '@/lib/engineStyles';
+import { requireAdmin, getAdminSupabaseOrThrow, logAdminAction } from '@/app/api/_lib/admin';
 
-const ALLOWED_EMAILS = ['jannikmariager@gmail.com'];
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const FLAG_ENABLED_KEY = 'engine_allocation_enabled';
 const FLAG_ALLOWLIST_KEY = 'engine_allocation_symbol_allowlist';
 
-async function getUser(request: NextRequest) {
-  const supabaseAuth = await createClient();
-  const {
-    data: { user: cookieUser },
-    error: authError,
-  } = await supabaseAuth.auth.getUser();
-
-  let user = cookieUser;
-
-  // Bearer token fallback
-  if ((!user || authError) && request) {
-    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
-    if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.slice('Bearer '.length).trim();
-      if (token.length > 0) {
-        const {
-          data: { user: tokenUser },
-        } = await supabaseAuth.auth.getUser(token);
-        if (tokenUser) user = tokenUser;
-      }
-    }
-  }
-
-  return user;
-}
-
 export async function GET(request: NextRequest) {
-  const user = await getUser(request);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!ALLOWED_EMAILS.includes((user.email || '').toLowerCase())) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const adminCtx = await requireAdmin(request);
+  if (adminCtx instanceof NextResponse) return adminCtx;
 
-  const supabase = await createAdminClient();
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+  }
 
   // Flags
   const { data: flagsData, error: flagsError } = await supabase
@@ -106,15 +85,19 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const user = await getUser(request);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!ALLOWED_EMAILS.includes((user.email || '').toLowerCase())) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const adminCtx = await requireAdmin(request);
+  if (adminCtx instanceof NextResponse) return adminCtx;
+
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
   }
 
   const body = await request.json();
   const action = body?.action;
-  const supabase = await createAdminClient();
 
   if (action === 'update_flags') {
     const enabled = Boolean(body.enabled);
@@ -129,6 +112,15 @@ export async function POST(request: NextRequest) {
 
     const { error } = await supabase.from('app_feature_flags').upsert(updates, { onConflict: 'key' });
     if (error) return NextResponse.json({ error: 'Failed to update flags' }, { status: 500 });
+
+    void logAdminAction({
+      adminId: adminCtx.adminId,
+      action: 'engine_allocation.update_flags',
+      entity: 'app_feature_flags',
+      before: null,
+      after: { enabled, allowlist },
+    });
+
     return NextResponse.json({ ok: true });
   }
 
@@ -148,6 +140,15 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     });
     if (error) return NextResponse.json({ error: 'Failed to upsert owner' }, { status: 500 });
+
+    void logAdminAction({
+      adminId: adminCtx.adminId,
+      action: 'engine_allocation.set_owner',
+      entity: `ticker_engine_owner:${symbol}`,
+      before: null,
+      after: { symbol, engine_key, engine_version, lock_days },
+    });
+
     return NextResponse.json({ ok: true });
   }
 
@@ -162,6 +163,15 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     });
     if (error) return NextResponse.json({ error: 'Failed to lock owner' }, { status: 500 });
+
+    void logAdminAction({
+      adminId: adminCtx.adminId,
+      action: 'engine_allocation.lock_owner',
+      entity: `ticker_engine_owner:${symbol}`,
+      before: null,
+      after: { symbol, lock_days },
+    });
+
     return NextResponse.json({ ok: true });
   }
 
@@ -179,6 +189,15 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     });
     if (error) return NextResponse.json({ error: 'Failed to revert owner' }, { status: 500 });
+
+    void logAdminAction({
+      adminId: adminCtx.adminId,
+      action: 'engine_allocation.revert_owner',
+      entity: `ticker_engine_owner:${symbol}`,
+      before: null,
+      after: { symbol },
+    });
+
     return NextResponse.json({ ok: true });
   }
 

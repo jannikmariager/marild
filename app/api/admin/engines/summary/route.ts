@@ -1,9 +1,8 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 interface Row {
   version: string;
@@ -25,7 +24,18 @@ function styleForTimeframe(tfRaw: string): Style {
   return 'INVESTOR';
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const adminCtx = await requireAdmin(request);
+  if (adminCtx instanceof NextResponse) return adminCtx;
+
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+  }
+
   // Fetch per-timeframe to avoid hitting PostgREST's 1k row cap for a single query
   const tfs = ['day', 'swing', 'invest'];
   // Prefer newer modular engines in the summary; still include older ones for history.

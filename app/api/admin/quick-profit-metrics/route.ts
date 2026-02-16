@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin';
 
 const ENGINE_KEY = 'QUICK_PROFIT';
 const ENGINE_VERSION = 'QUICK_PROFIT_V1';
@@ -7,7 +7,6 @@ const SOURCE_ENGINE_KEY = 'SCALP';
 const SOURCE_ENGINE_VERSION = 'SCALP_V1_MICROEDGE';
 const RUN_MODE = 'SHADOW';
 
-const supabase = supabaseAdmin;
 const ENGINE_SOURCES = [
   { engine_key: ENGINE_KEY, engine_version: ENGINE_VERSION },
   { engine_key: SOURCE_ENGINE_KEY, engine_version: SOURCE_ENGINE_VERSION },
@@ -80,7 +79,10 @@ const POSITION_COLUMNS = [
   'management_meta',
 ];
 
-async function fetchSourceData(source: { engine_key: string; engine_version: string }) {
+async function fetchSourceData(
+  supabase: ReturnType<typeof getAdminSupabaseOrThrow>,
+  source: { engine_key: string; engine_version: string }
+) {
   const [portfolioRes, tradesRes, openPositionsRes, closedPositionsRes] = await Promise.all([
     supabase
       .from('engine_portfolios')
@@ -181,7 +183,10 @@ function toNumber(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function enrichOpenPositions(positions: EnginePositionRow[]): Promise<FormattedOpenPosition[]> {
+async function enrichOpenPositions(
+  supabase: ReturnType<typeof getAdminSupabaseOrThrow>,
+  positions: EnginePositionRow[]
+): Promise<FormattedOpenPosition[]> {
   if (!positions || positions.length === 0) return [];
 
   const tickers = Array.from(
@@ -311,14 +316,28 @@ function formatClosedPositions(positions: EnginePositionRow[]): FormattedClosedP
   });
 }
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+export async function GET(request: NextRequest) {
+  const adminCtx = await requireAdmin(request);
+  if (adminCtx instanceof NextResponse) return adminCtx;
+
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+  }
+
   try {
     let sourceToUse = ENGINE_SOURCES[0];
-    let data = await fetchSourceData(sourceToUse);
+    let data = await fetchSourceData(supabase, sourceToUse);
 
     if (!hasShadowData(data) && ENGINE_SOURCES.length > 1) {
       const fallbackSource = ENGINE_SOURCES[1];
-      const fallbackData = await fetchSourceData(fallbackSource);
+      const fallbackData = await fetchSourceData(supabase, fallbackSource);
       if (hasShadowData(fallbackData)) {
         sourceToUse = fallbackSource;
         data = fallbackData;
@@ -371,7 +390,7 @@ export async function GET() {
       status: t.closed_at ? 'CLOSED' : 'OPEN',
     }));
 
-    const formattedOpenPositions = await enrichOpenPositions(openPositions as EnginePositionRow[]);
+    const formattedOpenPositions = await enrichOpenPositions(supabase, openPositions as EnginePositionRow[]);
     const formattedClosedPositions = formatClosedPositions(closedPositions as EnginePositionRow[]);
 
     return NextResponse.json(

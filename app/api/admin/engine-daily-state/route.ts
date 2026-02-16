@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin'
 
-const ALLOWED_EMAILS = ['jannikmariager@gmail.com']
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
+  const adminCtx = await requireAdmin(request)
+  if (adminCtx instanceof NextResponse) return adminCtx
+
+  let supabase
+  try {
+    supabase = getAdminSupabaseOrThrow()
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 })
+  }
+
   try {
     const { searchParams } = new URL(request.url)
     const engineKey = searchParams.get('engine_key') || 'SWING'
@@ -12,23 +24,6 @@ export async function GET(request: NextRequest) {
 
     if (!engineVersion) {
       return NextResponse.json({ error: 'engine_version is required' }, { status: 400 })
-    }
-
-    const supabase = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
-
-    // Simple auth: reuse same allow-list as engine-metrics
-    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const token = authHeader.slice('Bearer '.length).trim()
-    const { data: userResp } = await supabase.auth.getUser(token)
-    const user = userResp.user
-    if (!user || !ALLOWED_EMAILS.includes((user.email || '').toLowerCase())) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Determine trading day in America/New_York when not provided

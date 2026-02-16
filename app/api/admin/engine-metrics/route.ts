@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin'
 
 const STARTING_EQUITY = 100000
 
@@ -189,47 +189,20 @@ const isToday = (timestamp?: string | null, dayString?: string) => {
   return parsed.toISOString().slice(0, 10) === compareDate
 }
 
-const ALLOWED_EMAILS = ['jannikmariager@gmail.com']
-
 export async function GET(request: NextRequest) {
+  const adminCtx = await requireAdmin(request)
+  if (adminCtx instanceof NextResponse) return adminCtx
+
+  let supabase
+  try {
+    supabase = getAdminSupabaseOrThrow()
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 })
+  }
+
   try {
     const requestDate = new Date().toISOString().slice(0, 10)
-    const supabaseAuth = await createClient()
-    const supabase = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    // Check auth via cookies first
-    const {
-      data: { user: cookieUser },
-      error: authError,
-    } = await supabaseAuth.auth.getUser()
-
-    let user = cookieUser
-
-    // Allow bearer token from Authorization header as fallback (mobile clients)
-    if ((!user || authError) && request) {
-      const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
-      if (authHeader?.startsWith('Bearer ')) {
-        const token = authHeader.slice('Bearer '.length).trim()
-        if (token.length > 0) {
-          const {
-            data: { user: tokenUser },
-          } = await supabase.auth.getUser(token)
-          if (tokenUser) {
-            user = tokenUser
-          }
-        }
-      }
-    }
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    if (!ALLOWED_EMAILS.includes((user.email || '').toLowerCase())) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     // Fetch all engine versions (PRIMARY and SHADOW)
     const { data: engineVersions, error: versionsError } = await supabase

@@ -1,17 +1,31 @@
-import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin';
 
 type EquityPoint = { ts: string; equity: number };
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+export async function GET(request: NextRequest) {
+  const adminCtx = await requireAdmin(request);
+  if (adminCtx instanceof NextResponse) return adminCtx;
+
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+  }
+
   try {
     const [cryptoCurve, stockCurve] = await Promise.all([
-      fetchCryptoCurve(),
-      fetchStockCurve(),
+      fetchCryptoCurve(supabase),
+      fetchStockCurve(supabase),
     ]);
 
-    const cryptoMetrics = computeMetrics(cryptoCurve, await fetchCryptoTrades());
-    const stockMetrics = computeMetrics(stockCurve, await fetchStockTrades());
+    const cryptoMetrics = computeMetrics(cryptoCurve, await fetchCryptoTrades(supabase));
+    const stockMetrics = computeMetrics(stockCurve, await fetchStockTrades(supabase));
     const correlation = computeCorrelation(cryptoCurve, stockCurve);
 
     return NextResponse.json({
@@ -28,8 +42,8 @@ export async function GET() {
   }
 }
 
-async function fetchCryptoCurve(): Promise<EquityPoint[]> {
-  const { data, error } = await supabaseAdmin
+async function fetchCryptoCurve(supabase: ReturnType<typeof getAdminSupabaseOrThrow>): Promise<EquityPoint[]> {
+  const { data, error } = await supabase
     .from("engine_crypto_portfolio_state")
     .select("ts,equity")
     .eq("engine_key", "CRYPTO_V1_SHADOW")
@@ -39,9 +53,9 @@ async function fetchCryptoCurve(): Promise<EquityPoint[]> {
   return data.map((r: any) => ({ ts: r.ts, equity: Number(r.equity) }));
 }
 
-async function fetchStockCurve(): Promise<EquityPoint[]> {
+async function fetchStockCurve(supabase: ReturnType<typeof getAdminSupabaseOrThrow>): Promise<EquityPoint[]> {
   // Use live_portfolio_state if available
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from("live_portfolio_state")
     .select("ts,equity_dollars")
     .order("ts", { ascending: true })
@@ -50,16 +64,16 @@ async function fetchStockCurve(): Promise<EquityPoint[]> {
   return data.map((r: any) => ({ ts: r.ts, equity: Number(r.equity_dollars) }));
 }
 
-async function fetchCryptoTrades() {
-  const { data, error } = await supabaseAdmin
+async function fetchCryptoTrades(supabase: ReturnType<typeof getAdminSupabaseOrThrow>) {
+  const { data, error } = await supabase
     .from("engine_crypto_trades")
     .select("pnl");
   if (error || !data) return [];
   return data.map((r: any) => Number(r.pnl || 0));
 }
 
-async function fetchStockTrades() {
-  const { data, error } = await supabaseAdmin.from("live_trades").select("realized_pnl_dollars");
+async function fetchStockTrades(supabase: ReturnType<typeof getAdminSupabaseOrThrow>) {
+  const { data, error } = await supabase.from('live_trades').select('realized_pnl_dollars');
   if (error || !data) return [];
   return data.map((r: any) => Number(r.realized_pnl_dollars || 0));
 }

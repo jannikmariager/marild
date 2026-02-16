@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 interface LiveTradeRow {
   id: number;
@@ -38,7 +39,16 @@ interface SignalRow {
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createAdminClient();
+    const adminCtx = await requireAdmin(request);
+    if (adminCtx instanceof NextResponse) return adminCtx;
+
+    let supabase;
+    try {
+      supabase = getAdminSupabaseOrThrow();
+    } catch (respOrErr: any) {
+      if (respOrErr instanceof NextResponse) return respOrErr;
+      return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+    }
     const { searchParams } = new URL(request.url);
 
     const daysParam = searchParams.get('days');

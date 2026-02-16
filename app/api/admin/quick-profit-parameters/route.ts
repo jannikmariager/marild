@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin';
 
 const ENGINE_KEY = 'QUICK_PROFIT';
 const ENGINE_VERSION = 'QUICK_PROFIT_V1';
@@ -21,7 +21,6 @@ const DEFAULT_CONFIG = {
   lookback_hours: 2,
 };
 
-const supabase = supabaseAdmin;
 const ENGINE_SOURCES = [
   { engine_key: ENGINE_KEY, engine_version: ENGINE_VERSION },
   { engine_key: SOURCE_ENGINE_KEY, engine_version: SOURCE_ENGINE_VERSION },
@@ -49,7 +48,10 @@ function hasSourceData(data: SourceData) {
   return data.openPositions.length > 0 || data.decisionRows.length > 0;
 }
 
-async function fetchSourceData(source: { engine_key: string; engine_version: string }): Promise<SourceData> {
+async function fetchSourceData(
+  supabase: ReturnType<typeof getAdminSupabaseOrThrow>,
+  source: { engine_key: string; engine_version: string }
+): Promise<SourceData> {
   const [portfolioRes, positionsRes, decisionsRes] = await Promise.all([
     supabase
       .from('engine_portfolios')
@@ -86,13 +88,27 @@ async function fetchSourceData(source: { engine_key: string; engine_version: str
   };
 }
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+export async function GET(request: NextRequest) {
+  const adminCtx = await requireAdmin(request);
+  if (adminCtx instanceof NextResponse) return adminCtx;
+
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+  }
+
   try {
     const config = buildQuickProfitConfig();
 
-    let sourceData = await fetchSourceData(ENGINE_SOURCES[0]);
+    let sourceData = await fetchSourceData(supabase, ENGINE_SOURCES[0]);
     if (!hasSourceData(sourceData) && ENGINE_SOURCES.length > 1) {
-      const fallbackData = await fetchSourceData(ENGINE_SOURCES[1]);
+      const fallbackData = await fetchSourceData(supabase, ENGINE_SOURCES[1]);
       if (hasSourceData(fallbackData)) {
         sourceData = fallbackData;
       }

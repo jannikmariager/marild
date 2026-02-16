@@ -1,19 +1,29 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const ctx = await requireAdmin(request);
+  if (ctx instanceof NextResponse) return ctx;
+
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+  }
+
   const { data, error } = await supabase
     .from('engine_versions')
     .select('id,version,created_at,notes,features,metrics,improvement_score')
     .order('created_at', { ascending: true });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to load engines' }, { status: 500 });
   }
 
-  return NextResponse.json(data ?? []);
+  return NextResponse.json(data ?? [], { status: 200 });
 }

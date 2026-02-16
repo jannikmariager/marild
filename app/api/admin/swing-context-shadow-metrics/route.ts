@@ -1,13 +1,26 @@
-import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin'
 
 const ENGINE_KEY = 'SWING'
 const ENGINE_VERSION = 'SWING_SHADOW_CTX_V1'
 const RUN_MODE = 'SHADOW'
 
-const supabase = supabaseAdmin
 
-export async function GET() {
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+export async function GET(request: NextRequest) {
+  const adminCtx = await requireAdmin(request)
+  if (adminCtx instanceof NextResponse) return adminCtx
+
+  let supabase
+  try {
+    supabase = getAdminSupabaseOrThrow()
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 })
+  }
+
   try {
     // Portfolio snapshot for equity & starting_equity
     const { data: portfolio, error: portfolioError } = await supabase
@@ -45,9 +58,9 @@ export async function GET() {
 
     if (openError) throw openError
 
-    const enrichedOpen = await enrichOpenPositions(openPositions || [])
+    const enrichedOpen = await enrichOpenPositions(supabase, openPositions || [])
 
-    const closedPositions = await loadRecentClosedPositions()
+    const closedPositions = await loadRecentClosedPositions(supabase)
 
     const startingEquity = Number(portfolio?.starting_equity ?? 100000)
     const currentEquity = Number(portfolio?.equity ?? startingEquity)
@@ -75,8 +88,8 @@ export async function GET() {
       starting_equity: startingEquity,
     }
 
-    const policy = await loadLatestMarketContextDecision()
-    const liveEquitySummary = await loadLiveSwingEquitySummary()
+    const policy = await loadLatestMarketContextDecision(supabase)
+    const liveEquitySummary = await loadLiveSwingEquitySummary(supabase)
 
     return NextResponse.json(
       {
@@ -154,7 +167,10 @@ type MarketContextDecisionRow = {
   notes: string[] | null
 }
 
-async function enrichOpenPositions(rows: EnginePositionRow[]): Promise<EnrichedOpenPosition[]> {
+async function enrichOpenPositions(
+  supabase: ReturnType<typeof getAdminSupabaseOrThrow>,
+  rows: EnginePositionRow[]
+): Promise<EnrichedOpenPosition[]> {
   if (!rows || rows.length === 0) return []
 
   const tickers = Array.from(
@@ -244,7 +260,9 @@ async function enrichOpenPositions(rows: EnginePositionRow[]): Promise<EnrichedO
   })
 }
 
-async function loadRecentClosedPositions(): Promise<ClosedPositionRow[]> {
+async function loadRecentClosedPositions(
+  supabase: ReturnType<typeof getAdminSupabaseOrThrow>
+): Promise<ClosedPositionRow[]> {
   const { data, error } = await supabase
     .from('engine_positions')
     .select(
@@ -265,7 +283,9 @@ async function loadRecentClosedPositions(): Promise<ClosedPositionRow[]> {
   return (data || []) as ClosedPositionRow[]
 }
 
-async function loadLatestMarketContextDecision(): Promise<MarketContextDecisionRow | null> {
+async function loadLatestMarketContextDecision(
+  supabase: ReturnType<typeof getAdminSupabaseOrThrow>
+): Promise<MarketContextDecisionRow | null> {
   try {
     const { data, error } = await supabase
       .from('market_context_policy_decisions')
@@ -287,7 +307,9 @@ async function loadLatestMarketContextDecision(): Promise<MarketContextDecisionR
   }
 }
 
-async function loadLiveSwingEquitySummary(): Promise<{
+async function loadLiveSwingEquitySummary(
+  supabase: ReturnType<typeof getAdminSupabaseOrThrow>
+): Promise<{
   current_equity: number | null
   net_return_pct: number | null
 } | null> {

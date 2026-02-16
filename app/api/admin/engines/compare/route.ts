@@ -1,9 +1,8 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, getAdminSupabaseOrThrow } from '@/app/api/_lib/admin';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 interface Row {
   version: string;
@@ -15,8 +14,19 @@ interface Row {
   avg_r: number | null;
 }
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
+export async function GET(request: NextRequest) {
+  const adminCtx = await requireAdmin(request);
+  if (adminCtx instanceof NextResponse) return adminCtx;
+
+  let supabase;
+  try {
+    supabase = getAdminSupabaseOrThrow();
+  } catch (respOrErr: any) {
+    if (respOrErr instanceof NextResponse) return respOrErr;
+    return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+  }
+
+  const { searchParams } = new URL(request.url);
   const timeframe = searchParams.get('timeframe'); // e.g. "day" | "swing" | "invest"
 
   let query = supabase
