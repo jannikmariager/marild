@@ -76,12 +76,18 @@ const deriveCloseDateKey = (row: Pick<LiveTradeRow, "realized_pnl_date" | "exit_
   return row.realized_pnl_date ?? parseDateKeyFromExitTs(row.exit_timestamp);
 };
 
+const dateKeyToDate = (dateKey: string): Date => {
+  // Interpret a YYYY-MM-DD key as a calendar day; use midday UTC to avoid DST edge cases.
+  // Weekday formatting uses TIMEZONE explicitly.
+  return new Date(`${dateKey}T12:00:00Z`);
+};
+
 const isWeekdayDow = (dow: string) => dow === "Mon" || dow === "Tue" || dow === "Wed" || dow === "Thu" || dow === "Fri";
 
-const startOfNyWeekMonday = (now: Date): Date => {
-  // Compute the Monday of the current week in NY time.
-  // We step backwards based on NY weekday.
-  const cursor = new Date(now);
+const startOfNyWeekMondayFromTodayKey = (todayKey: string): Date => {
+  // todayKey is already computed in America/New_York via nyDateKey(new Date()).
+  // Base calculations on that key to ensure week rollover happens on NY midnight.
+  const cursor = dateKeyToDate(todayKey);
   const dow = nyDow(cursor);
   const map: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
   const back = map[dow] ?? 0;
@@ -89,8 +95,8 @@ const startOfNyWeekMonday = (now: Date): Date => {
   return cursor;
 };
 
-const currentWeekTradingDays = (now: Date): Array<{ date: string; dow: string }> => {
-  const monday = startOfNyWeekMonday(now);
+const currentWeekTradingDaysFromTodayKey = (todayKey: string): Array<{ date: string; dow: string }> => {
+  const monday = startOfNyWeekMondayFromTodayKey(todayKey);
   const days: Array<{ date: string; dow: string }> = [];
   for (let i = 0; i < 5; i += 1) {
     const d = new Date(monday);
@@ -150,7 +156,7 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   const todayKey = nyDateKey(now);
 
-  const tradingDays = currentWeekTradingDays(now);
+  const tradingDays = currentWeekTradingDaysFromTodayKey(todayKey);
   const startDate = tradingDays[0]?.date ?? null;
   const endDate = tradingDays[tradingDays.length - 1]?.date ?? null;
 
