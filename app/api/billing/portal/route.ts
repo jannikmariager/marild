@@ -56,7 +56,9 @@ export async function POST(request: NextRequest) {
     const customerId = await getOrCreateStripeCustomer(userEmail, userId);
 
     // Create billing portal session
-    const returnUrl = `${request.nextUrl.origin}/app/settings`;
+    // Always return to the *new* frontend app settings page.
+    const appBaseUrl = (process.env.APP_BASE_URL ?? 'https://www.marild.com').replace(/\/$/, '');
+    const returnUrl = `${appBaseUrl}/app/settings`;
     const portalUrl = await createBillingPortalSession(customerId, returnUrl);
 
     return NextResponse.json({ url: portalUrl });
