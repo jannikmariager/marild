@@ -46,6 +46,17 @@ Set the following environment variables:
 - `ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY`, `ALPACA_DATA_URL` – Alpaca Market Data credentials.
 - Optional overrides: `INGEST_START_ET`, `INGEST_END_ET`, `TRADE_GATE_START_ET`, `TRADE_GATE_END_ET`, `DATA_FRESHNESS_MAX_MINUTES`, `MARKET_HOLIDAYS_JSON`, `EXECUTION_DEFAULT_NOTIONAL`.
 
+#### GA4 (Admin → Analytics Snapshot)
+
+The Admin v2 "Analytics Snapshot" card calls `GET /api/admin/business-snapshot` and reads GA4 via the Google Analytics Data API.
+
+Set:
+
+- `GA4_PROPERTY_ID` – numeric GA4 property id (e.g. `123456789`).
+- `GA4_SERVICE_ACCOUNT_JSON` – service account JSON (either raw JSON or base64-encoded JSON). Must include `client_email` and `private_key`.
+
+In Google Analytics, grant the service account email Viewer access to the GA4 property.
+
 ### Validation checklist
 
 1. Run migrations under `supabase/migrations`. Confirm tables exist and `ai_signals` uniqueness constraint is active.
