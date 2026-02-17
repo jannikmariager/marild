@@ -39,13 +39,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid weekEnd (expected YYYY-MM-DD)' }, { status: 400 })
   }
 
-  // Safety: ensure weekEnd is a Friday in NY time.
-  const dt = DateTime.fromISO(weekEnd, { zone: REPORT_TZ })
-  if (dt.weekday !== 5) {
-    return NextResponse.json({ error: 'weekEnd must be a Friday (ET)' }, { status: 400 })
+  // Interpret weekEnd as a date in ET and snap it to the most recent Friday.
+  // This makes manual testing easier and avoids confusion around calendar weekday.
+  const dt = DateTime.fromISO(weekEnd, { zone: REPORT_TZ }).startOf('day')
+  if (!dt.isValid) {
+    return NextResponse.json({ error: 'Invalid weekEnd date' }, { status: 400 })
   }
 
-  const { weekStartNyKey, weekEndNyKey } = nyWeekBoundsFromWeekEnd(weekEnd)
+  // Luxon weekday: Mon=1..Sun=7, Friday=5
+  const daysSinceFriday = (dt.weekday - 5 + 7) % 7
+  const friday = dt.minus({ days: daysSinceFriday })
+  const fridayKey = friday.toFormat('yyyy-LL-dd')
+
+  const { weekStartNyKey, weekEndNyKey } = nyWeekBoundsFromWeekEnd(fridayKey)
 
   try {
     const res = await generateWeeklyExecutionReport({ weekStartNyKey, weekEndNyKey, force })

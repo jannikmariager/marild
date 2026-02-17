@@ -134,11 +134,11 @@ Both require:
 Generate a report for a known week end (Friday, ET). Example:
 
 ```sh
-curl -X POST "https://<your-site>/api/admin/reports/generate?weekEnd=2026-02-14&force=1" \
+curl -X POST "https://<your-site>/api/admin/reports/generate?weekEnd=2026-02-13&force=1" \
   -H "Authorization: Bearer <ADMIN_CRON_KEY>"
 ```
 
 Then verify:
-- `GET /api/reports` includes the slug `2026-02-14`
-- `GET /api/reports/2026-02-14` returns full report JSON + markdown
-- Visit `/reports` and `/reports/2026-02-14` in the frontend
+- `GET /api/reports` includes the slug `2026-02-13`
+- `GET /api/reports/2026-02-13` returns full report JSON + markdown
+- Visit `/reports` and `/reports/2026-02-13` in the frontend
