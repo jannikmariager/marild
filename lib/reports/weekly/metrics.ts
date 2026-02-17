@@ -331,21 +331,31 @@ export async function computeWeeklyExecutionMetrics(params: {
 
   const trades = (rows ?? []) as LiveTradeRow[]
 
-  const { data: beforeAgg, error: beforeError } = await supabaseAdmin
+  // NOTE: PostgREST aggregates may be disabled in some Supabase projects.
+  // Compute realized_before_week by summing rows in application code.
+  const { data: beforeRows, error: beforeError } = await supabaseAdmin
     .from('live_trades')
-    .select('realized_pnl_dollars.sum()')
+    .select('realized_pnl_dollars')
     .eq('strategy', 'SWING')
     .eq('engine_key', 'SWING')
     .not('realized_pnl_dollars', 'is', null)
     .not('exit_timestamp', 'is', null)
     .lt('exit_timestamp', startUtcIso)
-    .limit(1)
+    .order('exit_timestamp', { ascending: false })
+    .limit(10000)
 
   if (beforeError) {
     throw new Error(`Failed to compute realized_before_week: ${beforeError.message}`)
   }
 
-  const realized_before_week = clamp2(Number((beforeAgg as any)?.[0]?.sum ?? 0) || 0)
+  let realized_before_week = 0
+  for (const r of beforeRows ?? []) {
+    const v = (r as any)?.realized_pnl_dollars
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      realized_before_week += v
+    }
+  }
+  realized_before_week = clamp2(realized_before_week)
 
   return computeWeeklyExecutionMetricsFromTrades({
     weekStartNyKey,
