@@ -105,3 +105,40 @@ Use your scheduler of choice (Supabase cron, Vercel cron, or any orchestrator) t
    - Current open-position unrealized P&L applied to the latest day only.
 4. Never set `realized_pnl_dollars` or `realized_pnl_date` directly in application code. Book realized values by writing `exit_timestamp`, `exit_price`, and `realized_pnl_dollars`; the trigger keeps the date in sync.
 5. When auditing discrepancies, first verify that `live_portfolio_state` contains the latest `equity_dollars` rows. Stale snapshots will manifest as flat unrealized curves even if trades are correct.
+
+## Weekly Execution Reports (public)
+Manual end-to-end test (list + detail) for the public Weekly Execution Reports system.
+
+### Required env vars (names only)
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `ADMIN_CRON_KEY`
+
+Optional (recommended):
+- `OPENAI_API_KEY` (required in production; non-production has a safe fallback for layout testing)
+- `WEEKLY_REPORT_MODEL`
+
+### Verify rewrite/deployment
+1. Visit `/api/health` (should return 200 JSON with `ok: true`).
+2. Visit `/api/reports` (should return 200 JSON; may be empty before seeding).
+
+### Verify backend environment (admin-only)
+- `GET /api/admin/diagnostics/env`
+- `GET /api/admin/diagnostics/supabase`
+
+Both require:
+- Header: `Authorization: Bearer <ADMIN_CRON_KEY>`
+
+### Seed 1 report row (admin-only)
+Generate a report for a known week end (Friday, ET). Example:
+
+```sh
+curl -X POST "https://<your-site>/api/admin/reports/generate?weekEnd=2026-02-14&force=1" \
+  -H "Authorization: Bearer <ADMIN_CRON_KEY>"
+```
+
+Then verify:
+- `GET /api/reports` includes the slug `2026-02-14`
+- `GET /api/reports/2026-02-14` returns full report JSON + markdown
+- Visit `/reports` and `/reports/2026-02-14` in the frontend
