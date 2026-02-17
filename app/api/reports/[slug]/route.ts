@@ -5,7 +5,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const cacheHeaders = (res: NextResponse) => {
-  res.headers.set('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=86400')
+  res.headers.set('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=3600')
   return res
 }
 
@@ -22,7 +22,9 @@ export async function GET(_request: NextRequest, ctx: { params: Promise<{ slug: 
 
   const { data, error } = await supabase
     .from('weekly_execution_reports')
-    .select('*')
+    .select(
+      'slug,week_start,week_end,net_pnl_usd,net_return_pct,win_rate_pct,profit_factor,max_drawdown_pct,closed_trades,winners,losers,avg_hold_hours,equity_at_week_start,equity_at_week_end,largest_win_usd,largest_loss_usd,report_markdown,excerpt',
+    )
     .eq('slug', slug)
     .maybeSingle()
 
@@ -34,5 +36,26 @@ export async function GET(_request: NextRequest, ctx: { params: Promise<{ slug: 
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  return cacheHeaders(NextResponse.json(data))
+  const body = {
+    slug: data.slug,
+    week_start: data.week_start,
+    week_end: data.week_end,
+    net_pnl_usd: data.net_pnl_usd,
+    net_return_pct: data.net_return_pct,
+    win_rate_pct: data.win_rate_pct,
+    profit_factor: data.profit_factor,
+    max_drawdown_pct: data.max_drawdown_pct,
+    closed_trades: data.closed_trades,
+    winners: data.winners,
+    losers: data.losers,
+    avg_hold_hours: data.avg_hold_hours,
+    equity_at_week_start: data.equity_at_week_start,
+    equity_at_week_end: data.equity_at_week_end,
+    largest_win_usd: data.largest_win_usd,
+    largest_loss_usd: data.largest_loss_usd,
+    report_markdown: data.report_markdown,
+    excerpt: data.excerpt,
+  }
+
+  return cacheHeaders(NextResponse.json(body))
 }

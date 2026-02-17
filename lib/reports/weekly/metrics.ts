@@ -43,6 +43,7 @@ export type WeeklyExecutionMetrics = {
   week_label: string
 
   equity_at_week_start: number
+  equity_at_week_end: number
   realized_before_week: number
 
   closed_trades: number
@@ -63,8 +64,13 @@ export type WeeklyExecutionMetrics = {
 
   trade_outcomes: WeeklyReportTradeOutcome
   top_symbols: WeeklyReportTopSymbol[]
+  // Largest win/loss are by realized_pnl_dollars (USD) among closed trades in the week, not by % return.
   largest_win: WeeklyReportLargestTrade
   largest_loss: WeeklyReportLargestTrade
+
+  // Convenience scalar copies of key dollar metrics for fast rendering.
+  largest_win_usd: number
+  largest_loss_usd: number
 
   selected_trades: WeeklyReportSelectedTrade[]
 }
@@ -99,6 +105,7 @@ const computeReturnPct = (t: Pick<LiveTradeRow, 'entry_price' | 'exit_price' | '
 }
 
 const clamp2 = (n: number): number => Math.round(n * 100) / 100
+const clamp1 = (n: number): number => Math.round(n * 10) / 10
 
 export function getNyWeekLabel(weekStartNyKey: string, weekEndNyKey: string): string {
   const start = DateTime.fromISO(weekStartNyKey, { zone: REPORT_TZ })
@@ -257,7 +264,7 @@ export function computeWeeklyExecutionMetricsFromTrades(params: {
   }
   profit_factor = clamp2(profit_factor)
 
-  const avg_hold_hours = holdCount > 0 ? clamp2(holdSumMs / holdCount / (1000 * 60 * 60)) : 0
+  const avg_hold_hours = holdCount > 0 ? clamp1(holdSumMs / holdCount / (1000 * 60 * 60)) : 0
 
   const net_return_pct = equity_at_week_start !== 0 ? clamp2((net_pnl_usd / equity_at_week_start) * 100) : 0
 
@@ -271,12 +278,15 @@ export function computeWeeklyExecutionMetricsFromTrades(params: {
     target: 10,
   })
 
+  const equity_at_week_end = clamp2(equity_at_week_start + net_pnl_usd)
+
   const metrics: WeeklyExecutionMetrics = {
     week_start: weekStartNyKey,
     week_end: weekEndNyKey,
     week_label: getNyWeekLabel(weekStartNyKey, weekEndNyKey),
 
     equity_at_week_start,
+    equity_at_week_end,
     realized_before_week,
 
     closed_trades,
@@ -297,8 +307,11 @@ export function computeWeeklyExecutionMetricsFromTrades(params: {
 
     trade_outcomes: outcomes,
     top_symbols,
+    // Largest win/loss are by realized_pnl_dollars (USD) among closed trades in the week.
     largest_win: closed_trades > 0 ? largestWin : { symbol: null, pnl_usd: null, return_pct: null, closed_at: null },
     largest_loss: closed_trades > 0 ? largestLoss : { symbol: null, pnl_usd: null, return_pct: null, closed_at: null },
+    largest_win_usd: closed_trades > 0 && largestWin.pnl_usd != null ? clamp2(largestWin.pnl_usd) : 0,
+    largest_loss_usd: closed_trades > 0 && largestLoss.pnl_usd != null ? clamp2(largestLoss.pnl_usd) : 0,
 
     selected_trades,
   }

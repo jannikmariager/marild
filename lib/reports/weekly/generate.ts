@@ -68,6 +68,13 @@ export async function generateWeeklyExecutionReport(params?: {
     win_rate_pct: metrics.win_rate_pct,
     profit_factor: metrics.profit_factor,
     max_drawdown_pct: metrics.max_drawdown_pct,
+    equity_at_week_start: metrics.equity_at_week_start,
+    equity_at_week_end: metrics.equity_at_week_end,
+    winners: metrics.winners_count,
+    losers: metrics.losers_count,
+    avg_hold_hours: metrics.avg_hold_hours,
+    largest_win_usd: metrics.largest_win_usd,
+    largest_loss_usd: metrics.largest_loss_usd,
 
     updated_at: new Date().toISOString(),
   }

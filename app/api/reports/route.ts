@@ -5,7 +5,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const cacheHeaders = (res: NextResponse) => {
-  res.headers.set('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=86400')
+  res.headers.set('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=3600')
   return res
 }
 

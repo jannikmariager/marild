@@ -39,8 +39,13 @@ export function renderWeeklyReportMarkdown(params: {
   lines.push('| Metric | Value |')
   lines.push('|---|---:|')
   lines.push(`| Closed trades | ${metrics.closed_trades} |`)
+  lines.push(`| Winners / Losers | ${metrics.winners_count} / ${metrics.losers_count} |`)
   lines.push(`| Net P&L (USD) | ${fmtNum(metrics.net_pnl_usd, 2)} |`)
   lines.push(`| Net return | ${fmtPct(metrics.net_return_pct, 2)} |`)
+  lines.push(`| Equity start (USD) | ${fmtNum(metrics.equity_at_week_start, 2)} |`)
+  lines.push(`| Equity end (USD) | ${fmtNum(metrics.equity_at_week_end, 2)} |`)
+  lines.push(`| Largest win (USD) | ${fmtNum(metrics.largest_win_usd, 2)} |`)
+  lines.push(`| Largest loss (USD) | ${fmtNum(metrics.largest_loss_usd, 2)} |`)
   lines.push(`| Win rate | ${fmtPct(metrics.win_rate_pct, 2)} |`)
   lines.push(`| Profit factor | ${fmtNum(metrics.profit_factor, 2)} |`)
   lines.push(`| Max drawdown | ${fmtPct(metrics.max_drawdown_pct, 2)} |`)
@@ -104,6 +109,9 @@ export function renderWeeklyReportMarkdown(params: {
   if (metrics.pf_note) {
     lines.push(`- Profit factor note: ${metrics.pf_note}`)
   }
+  lines.push('')
+
+  lines.push('- All figures computed deterministically from closed trades in the public execution ledger. No hypothetical results.')
   lines.push('')
 
   lines.push('## Disclaimer')
