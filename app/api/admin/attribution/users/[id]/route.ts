@@ -1,22 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getAdminSupabaseOrThrow, requireAdmin } from '@/app/api/_lib/admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function requireAdminKey(request: NextRequest) {
-  const expected = process.env.ADMIN_CRON_KEY;
-  if (!expected) throw new Error('ADMIN_CRON_KEY not configured');
-
-  const header = request.headers.get('authorization');
-  const bearer = header?.startsWith('Bearer ') ? header.slice(7) : null;
-  const queryToken = request.nextUrl.searchParams.get('token');
-  const supplied = bearer || queryToken;
-
-  if (!supplied || supplied !== expected) {
-    throw new Error('Unauthorized');
-  }
-}
 
 const json = (data: unknown, init?: ResponseInit) => NextResponse.json(data, init);
 
@@ -26,11 +12,10 @@ interface RouteContext {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
-    try {
-      requireAdminKey(request);
-    } catch (err) {
-      return json({ error: (err as Error).message }, { status: 401 });
-    }
+    const adminCtx = await requireAdmin(request);
+    if (adminCtx instanceof NextResponse) return adminCtx;
+
+    const supabaseAdmin = getAdminSupabaseOrThrow();
 
     const userId = context.params.id;
 
