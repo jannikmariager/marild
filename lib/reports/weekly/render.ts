@@ -11,6 +11,16 @@ const fmtPct = (n: number, digits = 2): string => {
   return `${n.toFixed(digits)}%`
 }
 
+const fmtUsd = (n: number): string => {
+  if (!Number.isFinite(n)) return '—'
+  return n.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 const escapePipes = (s: string): string => s.replace(/\|/g, '\\|')
 
 export function renderWeeklyReportMarkdown(params: {
@@ -50,6 +60,11 @@ export function renderWeeklyReportMarkdown(params: {
   lines.push('')
 
   lines.push('## Summary')
+  lines.push('')
+  // Deterministic equity summary sentence with formatted USD values.
+  lines.push(
+    `The system closed ${metrics.closed_trades} trades during the week of ${metrics.week_label}, ending the period with equity of ${fmtUsd(metrics.equity_at_week_end)} compared to ${fmtUsd(metrics.equity_at_week_start)} at the start.`,
+  )
   lines.push('')
   for (const p of report.summary_paragraphs) {
     lines.push(p.trim())
