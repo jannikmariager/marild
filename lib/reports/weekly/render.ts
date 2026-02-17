@@ -29,9 +29,6 @@ export function renderWeeklyReportMarkdown(params: {
   lines.push('')
   lines.push(metrics.week_label)
   lines.push('')
-  lines.push(`Full report: ${reportUrl}`)
-  lines.push(`Verify live performance: ${trustUrl}`)
-  lines.push('')
 
   // At-a-glance
   lines.push('## At a glance')
@@ -94,8 +91,25 @@ export function renderWeeklyReportMarkdown(params: {
       const exit = t.exit != null ? fmtNum(t.exit, 4) : '—'
       const ret = t.return_pct != null ? fmtPct(t.return_pct, 2) : '—'
       const pnl = t.pnl_usd != null ? fmtNum(t.pnl_usd, 2) : '—'
+
+      const rawStatus = (t.status ?? '').toUpperCase()
+      const statusLabel =
+        rawStatus === 'TP_HIT'
+          ? 'Take Profit'
+          : rawStatus === 'SL_HIT'
+          ? 'Stop Loss'
+          : rawStatus === 'TRAILING_SL_HIT'
+          ? 'Trailing Stop'
+          : rawStatus === 'PARTIAL_TP'
+          ? 'Partial Take Profit'
+          : rawStatus === 'TIME_EXIT' || rawStatus === 'TIME_BASED'
+          ? 'Timed Exit'
+          : rawStatus
+          ? 'Other'
+          : '—'
+
       lines.push(
-        `| ${t.date} | ${escapePipes(t.symbol)} | ${t.dir} | ${entry} | ${exit} | ${ret} | ${pnl} | ${escapePipes(t.status ?? '—')} |`,
+        `| ${t.date} | ${escapePipes(t.symbol)} | ${t.dir} | ${entry} | ${exit} | ${ret} | ${pnl} | ${escapePipes(statusLabel)} |`,
       )
     }
   }
@@ -103,7 +117,7 @@ export function renderWeeklyReportMarkdown(params: {
 
   lines.push('## Methodology')
   lines.push('')
-  lines.push('- All figures are computed deterministically from closed trades in `public.live_trades` (closed by `exit_timestamp`).')
+  lines.push('- All figures are computed deterministically from closed trades recorded in the public execution ledger.')
   lines.push(`- Timezone: America/New_York (ET). Week window is ${metrics.week_start} 00:00 ET through ${metrics.week_end} 23:59 ET.`)
   lines.push(`- Drawdown method: ${metrics.drawdown_method} (equity path derived from the sequence of closed-trade realized P&L).`)
   if (metrics.pf_note) {
