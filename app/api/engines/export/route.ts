@@ -1,21 +1,32 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabaseOrError() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    return {
+      client: null as any,
+      error: NextResponse.json({ error: 'Server not configured' }, { status: 500 }) as NextResponse,
+    };
+  }
+  const client = createClient(url, key, { auth: { persistSession: false } });
+  return { client, error: null as NextResponse | null };
+}
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  const { client: supabase, error } = getSupabaseOrError();
+  if (error) return error;
   const { searchParams } = new URL(req.url);
   const format = searchParams.get('format') ?? 'csv';
 
-  const { data, error } = await supabase
+  const { data, error: queryError } = await supabase
     .from('engine_comparison_results')
     .select('version,ticker,timeframe,pnl,win_rate,max_dd,avg_r')
     .range(0, 99999);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (queryError) {
+    return NextResponse.json({ error: queryError.message }, { status: 500 });
   }
 
   if (format === 'json') {

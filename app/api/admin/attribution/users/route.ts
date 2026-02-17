@@ -6,6 +6,21 @@ export const dynamic = 'force-dynamic';
 
 const json = (data: unknown, init?: ResponseInit) => NextResponse.json(data, init);
 
+// Narrowed shapes for attribution admin list.
+type UserProfileRow = {
+  user_id: string;
+  email: string;
+  created_at: string;
+  plan?: string | null;
+};
+
+type AttributionRow = {
+  user_id: string;
+  source: string | null;
+  details: string | null;
+  created_at: string | null;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const adminCtx = await requireAdmin(request);
@@ -22,7 +37,7 @@ export async function GET(request: NextRequest) {
     // We expect a denormalized view or join. For now, query auth.users and left join attribution via RPC.
     // Simple approach: fetch users and attribution separately and join in memory.
 
-    const { data: users, error: usersError } = await supabaseAdmin
+    const { data: usersRaw, error: usersError } = await supabaseAdmin
       .from('user_profile')
       .select('user_id, email, created_at, plan');
 
@@ -31,7 +46,9 @@ export async function GET(request: NextRequest) {
       return json({ error: 'Failed to load users' }, { status: 500 });
     }
 
-    const { data: attributions, error: attrError } = await supabaseAdmin
+    const users = (usersRaw ?? []) as UserProfileRow[];
+
+    const { data: attributionsRaw, error: attrError } = await supabaseAdmin
       .from('user_attributions')
       .select('user_id, source, details, created_at');
 
@@ -40,18 +57,20 @@ export async function GET(request: NextRequest) {
       return json({ error: 'Failed to load attributions' }, { status: 500 });
     }
 
-    const attributionByUser = new Map<string, any>();
-    for (const row of attributions ?? []) {
+    const attributions = (attributionsRaw ?? []) as AttributionRow[];
+
+    const attributionByUser = new Map<string, AttributionRow>();
+    for (const row of attributions) {
       attributionByUser.set(row.user_id, row);
     }
 
-    let rows = (users ?? []).map((u) => {
+    let rows = users.map((u) => {
       const a = attributionByUser.get(u.user_id) ?? null;
       return {
         user_id: u.user_id,
         email: u.email,
         created_at: u.created_at,
-        plan: (u as any).plan ?? null,
+        plan: u.plan ?? null,
         attribution_source: a?.source ?? undefined,
         attribution_detail: a?.details ?? undefined,
         captured_at: a?.created_at ?? undefined,

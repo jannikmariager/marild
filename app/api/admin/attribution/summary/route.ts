@@ -6,6 +6,12 @@ export const dynamic = 'force-dynamic';
 
 const json = (data: unknown, init?: ResponseInit) => NextResponse.json(data, init);
 
+// Row shape returned from user_attributions for attribution summary.
+type AttributionRow = {
+  source: string | null;
+  created_at: string;
+};
+
 // range query param: 7d | 30d | 90d | all
 function getSince(range: string | null): Date | null {
   if (!range || range === 'all') return null;
@@ -37,9 +43,14 @@ export async function GET(request: NextRequest) {
       return json({ error: 'Failed to load attribution data' }, { status: 500 });
     }
 
+    const rows = (bySource ?? []) as AttributionRow[];
+
     const filtered = since
-      ? (bySource ?? []).filter((row) => new Date(row.created_at).getTime() >= since.getTime())
-      : bySource ?? [];
+      ? rows.filter((row) => {
+          const ts = new Date(row.created_at).getTime();
+          return Number.isFinite(ts) && ts >= since.getTime();
+        })
+      : rows;
 
     const totalResponses = filtered.length;
 
