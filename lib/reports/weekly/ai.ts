@@ -206,7 +206,8 @@ export async function generateWeeklyReportJson(params: {
   try {
     const resp = await openai.chat.completions.create({
       model,
-      temperature: 0.3,
+      // NOTE: Some models (incl. certain gpt-5.* variants) only support the default temperature.
+      // Omit temperature to remain compatible.
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -219,7 +220,7 @@ export async function generateWeeklyReportJson(params: {
     // Fallback for models/accounts without json_schema support.
     const resp = await openai.chat.completions.create({
       model,
-      temperature: 0.3,
+      // Omit temperature for broadest compatibility.
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
