@@ -54,6 +54,11 @@ export type WeeklyExecutionMetrics = {
   net_pnl_usd: number
   net_return_pct: number
 
+  // SPY benchmark over the same ET week window (buy & hold, close-to-close).
+  // spy_return_pct and alpha_vs_spy_pct are nullable when price data is missing.
+  spy_return_pct: number | null
+  alpha_vs_spy_pct: number | null
+
   profit_factor: number
   pf_note?: string
 
@@ -297,6 +302,9 @@ export function computeWeeklyExecutionMetricsFromTrades(params: {
     net_pnl_usd,
     net_return_pct,
 
+    spy_return_pct: null,
+    alpha_vs_spy_pct: null,
+
     profit_factor,
     ...(pf_note ? { pf_note } : {}),
 
@@ -318,6 +326,8 @@ export function computeWeeklyExecutionMetricsFromTrades(params: {
 
   return metrics
 }
+
+import { fetchSpyWeeklyReturnPct } from '@/lib/reports/weekly/benchmark'
 
 export async function computeWeeklyExecutionMetrics(params: {
   weekStartNyKey: string
@@ -370,12 +380,32 @@ export async function computeWeeklyExecutionMetrics(params: {
   }
   realized_before_week = clamp2(realized_before_week)
 
-  return computeWeeklyExecutionMetricsFromTrades({
+  const base = computeWeeklyExecutionMetricsFromTrades({
     weekStartNyKey,
     weekEndNyKey,
     trades,
     realized_before_week,
   })
+
+  // Fetch SPY benchmark for the same ET week window using daily close-to-close
+  // buy-and-hold return. If data is unavailable, leave fields as null.
+  let spy_return_pct: number | null = null
+  let alpha_vs_spy_pct: number | null = null
+  try {
+    spy_return_pct = await fetchSpyWeeklyReturnPct({ weekStartNyKey, weekEndNyKey })
+    if (spy_return_pct != null) {
+      alpha_vs_spy_pct = clamp2(base.net_return_pct - spy_return_pct)
+    }
+  } catch (_err) {
+    spy_return_pct = null
+    alpha_vs_spy_pct = null
+  }
+
+  return {
+    ...base,
+    spy_return_pct,
+    alpha_vs_spy_pct,
+  }
 }
 
 function selectDeterministicTrades(params: {

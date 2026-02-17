@@ -75,6 +75,8 @@ export async function generateWeeklyExecutionReport(params?: {
     avg_hold_hours: metrics.avg_hold_hours,
     largest_win_usd: metrics.largest_win_usd,
     largest_loss_usd: metrics.largest_loss_usd,
+    spy_return_pct: metrics.spy_return_pct,
+    alpha_vs_spy_pct: metrics.alpha_vs_spy_pct,
 
     updated_at: new Date().toISOString(),
   }
