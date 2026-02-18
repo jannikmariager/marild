@@ -64,8 +64,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (engine) {
-      // Filter by engine_version; engine_detail uses version as the identifier.
-      qb = qb.eq('engine_version', engine);
+      // Filter by engine_version OR engine_key. Some engines record trades
+      // under engine_key only, so support both.
+      qb = qb.or(`engine_version.eq.${engine},engine_key.eq.${engine}`);
     }
 
     if (status) {
