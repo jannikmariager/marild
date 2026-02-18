@@ -11,6 +11,7 @@ const querySchema = z.object({
   end_date: z.string().trim().optional(),
   status: z.string().trim().optional(), // win|loss|any
   engine: z.string().trim().optional(),
+  mode: z.enum(['live', 'shadow']).default('live'),
   page: z.coerce.number().int().min(1).default(1),
   page_size: z.coerce.number().int().min(1).max(200).default(50),
 });
@@ -34,43 +35,54 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid query', details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { ticker, start_date, end_date, status, engine, page, page_size } = parsed.data;
+  const { ticker, start_date, end_date, status, engine, mode, page, page_size } = parsed.data;
   const from = (page - 1) * page_size;
   const to = from + page_size - 1;
 
   try {
-    let qb = supabase
-      .from('live_trades')
-      .select(
-        'ticker, side, entry_price, exit_price, realized_pnl_dollars, exit_reason, engine_key, engine_version, exit_timestamp, entry_timestamp',
-        { count: 'exact' },
-      )
-      .not('exit_timestamp', 'is', null);
+    const isShadow = mode === 'shadow';
+
+    let qb = isShadow
+      ? supabase
+          .from('engine_trades')
+          .select(
+            'ticker, side, entry_price, exit_price, realized_pnl, realized_r, engine_key, engine_version, opened_at, closed_at, run_mode',
+            { count: 'exact' },
+          )
+          .eq('run_mode', 'SHADOW')
+          .not('closed_at', 'is', null)
+      : supabase
+          .from('live_trades')
+          .select(
+            'ticker, side, entry_price, exit_price, realized_pnl_dollars, exit_reason, engine_key, engine_version, exit_timestamp, entry_timestamp',
+            { count: 'exact' },
+          )
+          .not('exit_timestamp', 'is', null);
 
     if (ticker) {
       qb = qb.eq('ticker', ticker.toUpperCase());
     }
 
     if (engine) {
-      // Best-effort: live_trades appears to have engine_version in existing code.
+      // Filter by engine_version; engine_detail uses version as the identifier.
       qb = qb.eq('engine_version', engine);
     }
 
     if (status) {
       const s = status.toLowerCase();
-      if (s === 'win') qb = qb.gt('realized_pnl_dollars', 0);
-      if (s === 'loss') qb = qb.lt('realized_pnl_dollars', 0);
+      if (s === 'win') qb = qb.gt(isShadow ? 'realized_pnl' : 'realized_pnl_dollars', 0);
+      if (s === 'loss') qb = qb.lt(isShadow ? 'realized_pnl' : 'realized_pnl_dollars', 0);
     }
 
     if (start_date && isDateKey(start_date)) {
-      qb = qb.gte('exit_timestamp', `${start_date}T00:00:00.000Z`);
+      qb = qb.gte(isShadow ? 'closed_at' : 'exit_timestamp', `${start_date}T00:00:00.000Z`);
     }
     if (end_date && isDateKey(end_date)) {
-      qb = qb.lte('exit_timestamp', `${end_date}T23:59:59.999Z`);
+      qb = qb.lte(isShadow ? 'closed_at' : 'exit_timestamp', `${end_date}T23:59:59.999Z`);
     }
 
     const { data, error, count } = await qb
-      .order('exit_timestamp', { ascending: false })
+      .order(isShadow ? 'closed_at' : 'exit_timestamp', { ascending: false })
       .range(from, to);
 
     if (error) {
@@ -79,7 +91,8 @@ export async function GET(request: NextRequest) {
     }
 
     const items = (data ?? []).map((row: any) => {
-      const side = (row.side || 'LONG') as 'LONG' | 'SHORT';
+      const sideRaw = (row.side || 'LONG') as string;
+      const side = sideRaw.toUpperCase() === 'SELL' || sideRaw.toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG';
       const entry = Number(row.entry_price ?? 0);
       const exit = row.exit_price == null ? null : Number(row.exit_price);
       let pnl_pct: number | null = null;
@@ -88,16 +101,19 @@ export async function GET(request: NextRequest) {
         pnl_pct = Math.round(raw * 100) / 100;
       }
 
+      const realizedDollars = isShadow ? row.realized_pnl ?? null : row.realized_pnl_dollars ?? null;
+
       return {
         symbol: row.ticker ?? null,
         direction: side,
         entry: row.entry_price ?? null,
         exit: row.exit_price ?? null,
         pnl_pct,
-        pnl_usd: row.realized_pnl_dollars ?? null,
-        status: row.exit_reason ?? null,
+        pnl_usd: realizedDollars,
+        status: isShadow ? row.exit_reason ?? null : row.exit_reason ?? null,
         engine: row.engine_version ?? row.engine_key ?? null,
-        closed_at: row.exit_timestamp ?? null,
+        closed_at: isShadow ? row.closed_at ?? null : row.exit_timestamp ?? null,
+        ledger_mode: isShadow ? 'SHADOW' : 'LIVE',
       };
     });
 
