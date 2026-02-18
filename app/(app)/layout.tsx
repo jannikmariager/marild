@@ -6,6 +6,7 @@ import { QueryProvider } from '@/components/providers/query-provider';
 import { BACKTEST_VERSION } from '@/lib/backtest/version';
 import { SubscriptionGate } from '@/components/billing/SubscriptionGate';
 import { headers } from 'next/headers';
+import { Analytics } from '@/components/Analytics';
 
 export default async function AppLayout({
   children,
@@ -44,6 +45,7 @@ export default async function AppLayout({
               </div>
             </SubscriptionGate>
           </main>
+          <Analytics />
         </div>
       </UserProvider>
     </QueryProvider>

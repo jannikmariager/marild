@@ -7,11 +7,15 @@ export const dynamic = 'force-dynamic';
 const json = (data: unknown, init?: ResponseInit) => NextResponse.json(data, init);
 
 // Narrowed shapes for attribution admin list.
+// Note: user_profile does not have a generic "plan" column; instead we use
+// subscription_tier (and potentially premium_override_dev) and surface that
+// as a "plan"-like field in the response for display.
 type UserProfileRow = {
   user_id: string;
   email: string;
   created_at: string;
-  plan?: string | null;
+  subscription_tier?: string | null;
+  premium_override_dev?: boolean | null;
 };
 
 type AttributionRow = {
@@ -37,9 +41,9 @@ export async function GET(request: NextRequest) {
     // We expect a denormalized view or join. For now, query auth.users and left join attribution via RPC.
     // Simple approach: fetch users and attribution separately and join in memory.
 
-    const { data: usersRaw, error: usersError } = await supabaseAdmin
+  const { data: usersRaw, error: usersError } = await supabaseAdmin
       .from('user_profile')
-      .select('user_id, email, created_at, plan');
+      .select('user_id, email, created_at, subscription_tier, premium_override_dev');
 
     if (usersError) {
       console.error('[admin/attribution/users] usersError', usersError);
@@ -66,11 +70,13 @@ export async function GET(request: NextRequest) {
 
     let rows = users.map((u) => {
       const a = attributionByUser.get(u.user_id) ?? null;
+      // Derive a human-friendly "plan" from subscription_tier / premium_override_dev.
+      const plan = u.subscription_tier ?? (u.premium_override_dev ? 'pro (override)' : null);
       return {
         user_id: u.user_id,
         email: u.email,
         created_at: u.created_at,
-        plan: u.plan ?? null,
+        plan,
         attribution_source: a?.source ?? undefined,
         attribution_detail: a?.details ?? undefined,
         captured_at: a?.created_at ?? undefined,

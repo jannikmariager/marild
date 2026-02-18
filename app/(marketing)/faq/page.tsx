@@ -1,5 +1,16 @@
+import type { Metadata } from "next";
 import { FAQSection } from "@/components/landing/FAQSection";
 import { LandingFooter } from "@/components/landing/LandingFooter";
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: true,
+  },
+  alternates: {
+    canonical: "https://marild.com/faq",
+  },
+};
 
 export default function FAQPage() {
   return (

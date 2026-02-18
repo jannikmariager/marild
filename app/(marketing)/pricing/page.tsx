@@ -1,11 +1,22 @@
 'use client'
 
+import type { Metadata } from 'next'
 import { useEffect, useState } from 'react'
 import { useAccess } from '@/lib/useAccess'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Check, Activity, Shield, BarChart3, Eye } from 'lucide-react'
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: true,
+  },
+  alternates: {
+    canonical: 'https://marild.com/pricing',
+  },
+};
 
 export default function PricingPage() {
   const access = useAccess()

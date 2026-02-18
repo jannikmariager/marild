@@ -1,3 +1,15 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: true,
+  },
+  alternates: {
+    canonical: "https://marild.com/data-signals-policy",
+  },
+};
+
 export default function DataPolicyPage() {
   return (
     <div className="container mx-auto max-w-4xl px-6 py-12">

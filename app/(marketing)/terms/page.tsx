@@ -1,3 +1,15 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: true,
+  },
+  alternates: {
+    canonical: "https://marild.com/terms",
+  },
+};
+
 export default function TermsPage() {
   return (
     <div className="container mx-auto py-12 px-4 sm:px-6 lg:px-8 max-w-4xl">

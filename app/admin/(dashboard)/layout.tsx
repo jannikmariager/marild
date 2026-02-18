@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Sidebar } from '@/components/admin/sidebar'
 import { Topbar } from '@/components/admin/topbar'
+import { Analytics } from '@/components/Analytics'
 
 export default async function AdminLayout({
   children,
@@ -29,6 +30,7 @@ export default async function AdminLayout({
         <main className="flex-1 overflow-y-auto bg-background p-6">
           {children}
         </main>
+        <Analytics />
       </div>
     </div>
   )
