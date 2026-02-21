@@ -186,13 +186,10 @@ export async function generateWeeklyReportJson(params: {
 }): Promise<WeeklyReportJson> {
   const { metrics, slug } = params
 
-  // Non-production fallback for preview/dev environments so layout testing can proceed.
-  // In production, OPENAI_API_KEY is required.
+  // If OpenAI is not configured, always fall back to a deterministic
+  // template so weekly reports can still be generated in production.
   if (!process.env.OPENAI_API_KEY) {
-    if (isNonProd()) {
-      return fallbackWeeklyReportJson({ slug })
-    }
-    throw new Error('OPENAI_API_KEY is not configured')
+    return fallbackWeeklyReportJson({ slug })
   }
 
   const openai = getOpenAIClient()
@@ -204,49 +201,56 @@ export async function generateWeeklyReportJson(params: {
   let content: string | null = null
 
   try {
-    const resp = await openai.chat.completions.create({
-      model,
-      // NOTE: Some models (incl. certain gpt-5.* variants) only support the default temperature.
-      // Omit temperature to remain compatible.
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      response_format: { type: 'json_schema', json_schema: jsonSchemaForStructuredOutput() },
-    })
+    try {
+      const resp = await openai.chat.completions.create({
+        model,
+        // NOTE: Some models (incl. certain gpt-5.* variants) only support the default temperature.
+        // Omit temperature to remain compatible.
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        response_format: { type: 'json_schema', json_schema: jsonSchemaForStructuredOutput() },
+      })
 
-    content = resp.choices?.[0]?.message?.content ?? null
-  } catch (err) {
-    // Fallback for models/accounts without json_schema support.
-    const resp = await openai.chat.completions.create({
-      model,
-      // Omit temperature for broadest compatibility.
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      // Most widely supported JSON mode.
-      response_format: { type: 'json_object' },
-    })
+      content = resp.choices?.[0]?.message?.content ?? null
+    } catch (_err) {
+      // Fallback for models/accounts without json_schema support.
+      const resp = await openai.chat.completions.create({
+        model,
+        // Omit temperature for broadest compatibility.
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        // Most widely supported JSON mode.
+        response_format: { type: 'json_object' },
+      })
 
-    content = resp.choices?.[0]?.message?.content ?? null
+      content = resp.choices?.[0]?.message?.content ?? null
+    }
+
+    if (!content || typeof content !== 'string') {
+      throw new Error('OpenAI returned empty content')
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(content)
+    } catch {
+      throw new Error('OpenAI response was not valid JSON')
+    }
+
+    const validated = WeeklyReportJsonSchema.safeParse(parsed)
+    if (!validated.success) {
+      throw new Error(`Weekly report JSON failed schema validation: ${validated.error.message}`)
+    }
+
+    return validated.data
+  } catch (_err) {
+    // If anything in the OpenAI pipeline fails (network, auth, schema,
+    // etc.), fall back to a deterministic template so the report job
+    // cannot fail.
+    return fallbackWeeklyReportJson({ slug })
   }
-
-  if (!content || typeof content !== 'string') {
-    throw new Error('OpenAI returned empty content')
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(content)
-  } catch {
-    throw new Error('OpenAI response was not valid JSON')
-  }
-
-  const validated = WeeklyReportJsonSchema.safeParse(parsed)
-  if (!validated.success) {
-    throw new Error(`Weekly report JSON failed schema validation: ${validated.error.message}`)
-  }
-
-  return validated.data
 }
